@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/weekly-poll",
+      "schedule": "0 23 * * 6"
+    },
+    {
+      "path": "/api/cron/weekly-report",
+      "schedule": "0 12 * * 1"
+    },
+    {
+      "path": "/api/cron/monthly-deepdive",
+      "schedule": "0 13 1 * *"
+    }
+  ]
+}
