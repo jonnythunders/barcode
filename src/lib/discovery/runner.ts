@@ -9,12 +9,14 @@
  *
  * We run TikTok and Amazon serially per category (TikTok is rate-limit
  * sensitive and Amazon will block us if we go too parallel). Within a
- * category, the two sources run in parallel since they hit different
- * domains.
+ * category, the two sources run in parallel since they hit different domains.
  */
 import { getAdminSupabase } from "@/lib/supabase-admin";
 import { crawlTikTokForCategory } from "./tiktok-hashtag-crawler";
 import { crawlAmazonCategoryForCategory } from "./amazon-category-crawler";
+import type { FetcherResult } from "@/lib/types";
+import type { DiscoveryResult } from "./_base";
+import { nowIso } from "@/lib/utils";
 
 export interface DiscoveryRunSummary {
   categoriesProcessed: number;
@@ -22,6 +24,15 @@ export interface DiscoveryRunSummary {
   totalReActivated: number;
   totalSkipped: number;
   perCategoryErrors: { categoryId: string; categorySlug: string; source: string; error: string }[];
+}
+
+/** A no-op result used when a category has no seeds for a given source. */
+function skippedResult(): FetcherResult<DiscoveryResult> {
+  return {
+    ok: true,
+    data: { newCount: 0, reActivatedCount: 0, skippedCount: 0, insertedBrandIds: [] },
+    capturedAt: nowIso(),
+  };
 }
 
 export async function runDiscoveryForAllCategories(
@@ -46,14 +57,16 @@ export async function runDiscoveryForAllCategories(
   for (const cat of categories ?? []) {
     summary.categoriesProcessed++;
 
-    // Run both sources in parallel for this category
+    const hasTiktokSeeds = (cat.tiktok_hashtags?.length ?? 0) > 0;
+    const hasAmazonUrls = (cat.amazon_category_urls?.length ?? 0) > 0;
+
     const [tiktokRes, amazonRes] = await Promise.all([
-      (cat.tiktok_hashtags?.length ?? 0) > 0
+      hasTiktokSeeds
         ? crawlTikTokForCategory({ categoryId: cat.id, triggerKind })
-        : Promise.resolve({ ok: true, data: null, capturedAt: new Date().toISOString() }),
-      (cat.amazon_category_urls?.length ?? 0) > 0
+        : Promise.resolve(skippedResult()),
+      hasAmazonUrls
         ? crawlAmazonCategoryForCategory({ categoryId: cat.id, triggerKind })
-        : Promise.resolve({ ok: true, data: null, capturedAt: new Date().toISOString() }),
+        : Promise.resolve(skippedResult()),
     ]);
 
     if (tiktokRes.ok && tiktokRes.data) {
