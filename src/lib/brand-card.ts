@@ -38,73 +38,71 @@ import { fetchReddit, fetchRedditCommentSample, type RedditResult } from "@/lib/
 import { analyzeSentiment, type SentimentResult } from "@/lib/sentiment";
 import { computeMomentumScore } from "@/lib/momentum";
 
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;     // 6 hours
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 export interface BrandCardOptions {
   brandName: string;
-  // If true, ignore the cache and force a fresh fetch.
   forceRefresh?: boolean;
-  // Optional handle overrides — bypasses auto-resolution.
   override?: {
     tiktokHandle?: string;
     instagramHandle?: string;
     amazonBrand?: string;
     websiteUrl?: string;
   };
-  // Optional context for sentiment disambiguation, etc.
   contextHint?: string;
+}
+
+/** Typed "not found" stub so TypeScript knows exactly what T is. */
+function notFoundResult<T>(reason: string): FetcherResult<T> {
+  return { ok: false, error: `not_found: ${reason}`, capturedAt: nowIso() };
 }
 
 export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   const startedAt = Date.now();
 
-  // -----------------------------------------------------------------
-  // Step 1: handle resolution
-  // -----------------------------------------------------------------
+  // --- Step 1: handle resolution ---
   const resolution = await resolveBrandHandles({
     brandName: opts.brandName,
     persistToBrandsRow: true,
     override: opts.override,
   });
-
   if (!resolution.brandId) {
-    // Couldn't even create a brand row. Almost never happens (the resolver
-    // always inserts) — surface a useful error.
     throw new Error(`Could not resolve a brand row for "${opts.brandName}"`);
   }
   const brandId = resolution.brandId;
 
-  // -----------------------------------------------------------------
-  // Step 2: cache check
-  // -----------------------------------------------------------------
+  // --- Step 2: cache check ---
   if (!opts.forceRefresh) {
     const cached = await readCache(brandId);
     if (cached) return cached;
   }
 
-  // -----------------------------------------------------------------
-  // Step 3: fan-out fetchers
-  // -----------------------------------------------------------------
   const primaryKeyword = opts.brandName;
 
-  // Some fetchers need a resolved handle to even attempt. Others (Google
-  // Trends, Reddit, Amazon) can work off the brand name alone.
-  const tiktokPromise = resolution.tiktokHandle
+  // --- Step 3: fan-out fetchers ---
+  // Each promise is explicitly typed so TypeScript never widens to unknown.
+  const tiktokPromise: Promise<FetcherResult<TikTokResult>> = resolution.tiktokHandle
     ? fetchTikTok({ brandId, handle: resolution.tiktokHandle, triggerKind: "on_demand" })
-    : Promise.resolve(notFoundPlatform("no tiktok handle resolved"));
+    : Promise.resolve(notFoundResult<TikTokResult>("no tiktok handle resolved"));
 
-  const instagramPromise = resolution.instagramHandle
+  const instagramPromise: Promise<FetcherResult<InstagramResult>> = resolution.instagramHandle
     ? fetchInstagram({ brandId, handle: resolution.instagramHandle, triggerKind: "on_demand" })
-    : Promise.resolve(notFoundPlatform("no instagram handle resolved"));
+    : Promise.resolve(notFoundResult<InstagramResult>("no instagram handle resolved"));
 
-  const shopifyPromise = resolution.websiteUrl
+  const shopifyPromise: Promise<FetcherResult<ShopifyResult>> = resolution.websiteUrl
     ? fetchShopify({ brandId, domain: resolution.websiteUrl, triggerKind: "on_demand" })
-    : Promise.resolve(notFoundPlatform("no shopify domain known"));
+    : Promise.resolve(notFoundResult<ShopifyResult>("no shopify domain known"));
 
-  // Reddit: pull subreddit seeds from the brand's category if it has one
   const subredditsForBrand = await getSubredditsForBrand(brandId);
 
-  const [trendsR, amazonR, shopifyR, tiktokR, instagramR, redditR] = await Promise.all([
+  const [trendsR, amazonR, shopifyR, tiktokR, instagramR, redditR]: [
+    FetcherResult<GoogleTrendsResult>,
+    FetcherResult<AmazonResult>,
+    FetcherResult<ShopifyResult>,
+    FetcherResult<TikTokResult>,
+    FetcherResult<InstagramResult>,
+    FetcherResult<RedditResult>,
+  ] = await Promise.all([
     fetchGoogleTrends({ brandId, keyword: primaryKeyword, triggerKind: "on_demand" }),
     fetchAmazon({ brandId, brandName: resolution.amazonBrand ?? primaryKeyword, triggerKind: "on_demand" }),
     shopifyPromise,
@@ -118,9 +116,7 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
     }),
   ]);
 
-  // -----------------------------------------------------------------
-  // Step 4: sentiment (only if reddit returned threads)
-  // -----------------------------------------------------------------
+  // --- Step 4: sentiment ---
   let sentimentR: FetcherResult<SentimentResult> | null = null;
   if (redditR.ok && redditR.data && redditR.data.topThreads.length > 0) {
     try {
@@ -141,35 +137,27 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
     }
   }
 
-  // -----------------------------------------------------------------
-  // Step 5: momentum score
-  // -----------------------------------------------------------------
+  // --- Step 5: momentum ---
   const momentum = await computeMomentumScore({ brandId, persistSnapshot: true });
 
-  // -----------------------------------------------------------------
-  // Step 6: IG trend line (from our own snapshot history)
-  // -----------------------------------------------------------------
+  // --- Step 6: IG trend line ---
   const igTrend = await getInstagramFollowerTrend(brandId, 90);
 
-  // -----------------------------------------------------------------
-  // Step 7: narrative
-  // -----------------------------------------------------------------
+  // --- Step 7: narrative ---
   const partialFetches = collectErrors({ trendsR, amazonR, shopifyR, tiktokR, instagramR, redditR, sentimentR });
   const narrative = await generateNarrative({
     brandName: resolution.brandName,
-    tiktok: tiktokR.ok ? tiktokR.data : null,
-    instagram: instagramR.ok ? instagramR.data : null,
-    amazon: amazonR.ok ? amazonR.data : null,
-    trends: trendsR.ok ? trendsR.data : null,
-    reddit: redditR.ok ? redditR.data : null,
-    sentiment: sentimentR?.ok ? sentimentR.data : null,
+    tiktok: tiktokR.ok ? (tiktokR.data ?? null) : null,
+    instagram: instagramR.ok ? (instagramR.data ?? null) : null,
+    amazon: amazonR.ok ? (amazonR.data ?? null) : null,
+    trends: trendsR.ok ? (trendsR.data ?? null) : null,
+    reddit: redditR.ok ? (redditR.data ?? null) : null,
+    sentiment: sentimentR?.ok ? (sentimentR.data ?? null) : null,
     momentumScore: momentum.score,
     notInRetail: momentum.notInRetail,
   });
 
-  // -----------------------------------------------------------------
-  // Step 8: assemble + cache
-  // -----------------------------------------------------------------
+  // --- Step 8: assemble + cache ---
   const card: BrandCard = assembleBrandCard({
     brandId,
     resolution,
@@ -186,7 +174,6 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   });
 
   await writeCache(brandId, card);
-
   console.log(`[brand-card] ${resolution.brandName} assembled in ${Date.now() - startedAt}ms (partial=${card.partial})`);
   return card;
 }
@@ -212,18 +199,13 @@ async function readCache(brandId: string): Promise<BrandCard | null> {
 async function writeCache(brandId: string, card: BrandCard): Promise<void> {
   const db = getAdminSupabase();
   await db.from("brand_card_cache").upsert(
-    {
-      brand_id: brandId,
-      payload: card,
-      generated_at: nowIso(),
-      ttl_seconds: Math.floor(CACHE_TTL_MS / 1000),
-    },
+    { brand_id: brandId, payload: card, generated_at: nowIso(), ttl_seconds: Math.floor(CACHE_TTL_MS / 1000) },
     { onConflict: "brand_id" }
   );
 }
 
 // =========================================================================
-// Subreddit lookup from category seeds
+// Subreddit lookup
 // =========================================================================
 
 async function getSubredditsForBrand(brandId: string): Promise<string[]> {
@@ -233,7 +215,6 @@ async function getSubredditsForBrand(brandId: string): Promise<string[]> {
     .select("primary_category_id, categories!brands_primary_category_id_fkey(subreddits)")
     .eq("id", brandId)
     .maybeSingle();
-  // Supabase relational select returns a nested object
   const subs = (data?.categories as { subreddits?: string[] } | null)?.subreddits ?? [];
   return Array.isArray(subs) ? subs : [];
 }
@@ -259,79 +240,56 @@ async function generateNarrative(input: NarrativeInput): Promise<string | null> 
     const env = getServerEnv();
     const client = new Anthropic({ apiKey: env.anthropicApiKey });
 
-    // Build a compact factual summary the model can riff on. We hand the
-    // model facts, not raw API responses, so its output is grounded.
     const facts: string[] = [];
     if (input.tiktok?.followerCount != null) {
       facts.push(`TikTok: ${formatNum(input.tiktok.followerCount)} followers`);
-      if (input.tiktok.engagementRate != null) {
+      if (input.tiktok.engagementRate != null)
         facts.push(`TikTok engagement: ${(input.tiktok.engagementRate * 100).toFixed(1)}%`);
-      }
     }
-    if (input.instagram?.followerCount != null) {
+    if (input.instagram?.followerCount != null)
       facts.push(`Instagram: ${formatNum(input.instagram.followerCount)} followers`);
-    }
     if (input.amazon) {
-      if (input.amazon.starRating != null && input.amazon.reviewCount != null) {
+      if (input.amazon.starRating != null && input.amazon.reviewCount != null)
         facts.push(`Amazon: ${input.amazon.starRating} stars (${formatNum(input.amazon.reviewCount)} reviews)`);
-      }
-      if (input.amazon.bsrRank != null) {
+      if (input.amazon.bsrRank != null)
         facts.push(`Amazon BSR: #${input.amazon.bsrRank}${input.amazon.bsrCategory ? ` in ${input.amazon.bsrCategory}` : ""}`);
-      }
-      if (input.amazon.boughtPastMonth) {
+      if (input.amazon.boughtPastMonth)
         facts.push(`Amazon: ${input.amazon.boughtPastMonth} bought past month`);
-      }
     }
-    if (input.trends?.yoyChangePct != null) {
+    if (input.trends?.yoyChangePct != null)
       facts.push(`Google Trends YoY: ${(input.trends.yoyChangePct * 100).toFixed(0)}%`);
-    }
     if (input.reddit && input.reddit.mentionCount > 0) {
       facts.push(`Reddit: ${input.reddit.mentionCount} mentions in past ${input.reddit.windowDays}d`);
-      if (input.reddit.velocity != null) {
+      if (input.reddit.velocity != null)
         facts.push(`Reddit velocity: ${(input.reddit.velocity * 100).toFixed(0)}%`);
-      }
     }
     if (input.sentiment) {
       facts.push(`Sentiment: ${input.sentiment.label} (${input.sentiment.overallScore.toFixed(2)})`);
-      if (input.sentiment.positiveThemes.length > 0) {
+      if (input.sentiment.positiveThemes.length > 0)
         facts.push(`Praised for: ${input.sentiment.positiveThemes.slice(0, 3).join(", ")}`);
-      }
     }
-    if (input.momentumScore != null) {
-      facts.push(`Momentum Score: ${input.momentumScore}/100`);
-    }
-    if (input.notInRetail) {
-      facts.push(`Not yet in Nielsen retail data — DTC-only signal`);
-    }
-
-    if (facts.length === 0) {
-      return null;
-    }
+    if (input.momentumScore != null) facts.push(`Momentum Score: ${input.momentumScore}/100`);
+    if (input.notInRetail) facts.push(`Not yet in Nielsen retail data — DTC-only signal`);
+    if (facts.length === 0) return null;
 
     const res = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 200,
       system:
         "You are a brand intelligence analyst at a consumer-goods rep group. " +
-        "Given factual signals about a brand, write a 2-3 sentence executive summary " +
-        "that synthesizes what the data says. Lead with the most important signal. " +
-        "Be direct and confident, not hedgy. Don't repeat all the numbers — pick the " +
-        "ones that matter most for a sales rep deciding whether to pitch this brand. " +
-        "End with an action recommendation if the data warrants it. No preamble, no markdown.",
+        "Given factual signals about a brand, write a 2-3 sentence executive summary. " +
+        "Lead with the most important signal. Be direct and confident. " +
+        "No preamble, no markdown.",
       messages: [
-        {
-          role: "user",
-          content: `Brand: ${input.brandName}\n\nSignals:\n${facts.map((f) => `- ${f}`).join("\n")}`,
-        },
+        { role: "user", content: `Brand: ${input.brandName}\n\nSignals:\n${facts.map((f) => `- ${f}`).join("\n")}` },
       ],
     });
 
-    const text = res.content
+    return res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("")
-      .trim();
-    return text || null;
+      .trim() || null;
   } catch (err) {
     console.warn(`[brand-card] narrative generation failed: ${err}`);
     return null;
@@ -365,7 +323,6 @@ interface AssembleInput {
 
 function assembleBrandCard(a: AssembleInput): BrandCard {
   const partial = Object.keys(a.errors).length > 0;
-
   const recommendedAction =
     a.momentum.score == null
       ? null
@@ -468,10 +425,6 @@ function platformStatus(r: FetcherResult<unknown>): PlatformBlock["status"] {
   return "error";
 }
 
-function notFoundPlatform<T>(reason: string): FetcherResult<T> {
-  return { ok: false, error: `not_found: ${reason}`, capturedAt: nowIso() };
-}
-
 function collectErrors(results: {
   trendsR: FetcherResult<unknown>;
   amazonR: FetcherResult<unknown>;
@@ -481,13 +434,13 @@ function collectErrors(results: {
   redditR: FetcherResult<unknown>;
   sentimentR: FetcherResult<unknown> | null;
 }): Record<string, string> {
-  const errors: Record<string, string> = {};
-  if (!results.trendsR.ok) errors.google_trends = results.trendsR.error ?? "unknown";
-  if (!results.amazonR.ok) errors.amazon = results.amazonR.error ?? "unknown";
-  if (!results.shopifyR.ok) errors.shopify = results.shopifyR.error ?? "unknown";
-  if (!results.tiktokR.ok) errors.tiktok = results.tiktokR.error ?? "unknown";
-  if (!results.instagramR.ok) errors.instagram = results.instagramR.error ?? "unknown";
-  if (!results.redditR.ok) errors.reddit = results.redditR.error ?? "unknown";
-  if (results.sentimentR && !results.sentimentR.ok) errors.sentiment = results.sentimentR.error ?? "unknown";
-  return errors;
+  const out: Record<string, string> = {};
+  if (!results.trendsR.ok) out.google_trends = results.trendsR.error ?? "unknown";
+  if (!results.amazonR.ok) out.amazon = results.amazonR.error ?? "unknown";
+  if (!results.shopifyR.ok) out.shopify = results.shopifyR.error ?? "unknown";
+  if (!results.tiktokR.ok) out.tiktok = results.tiktokR.error ?? "unknown";
+  if (!results.instagramR.ok) out.instagram = results.instagramR.error ?? "unknown";
+  if (!results.redditR.ok) out.reddit = results.redditR.error ?? "unknown";
+  if (results.sentimentR && !results.sentimentR.ok) out.sentiment = results.sentimentR.error ?? "unknown";
+  return out;
 }
