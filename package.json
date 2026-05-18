@@ -40,7 +40,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/google-trends-api": "^4.9.0",
     "@types/node": "^20",
     "@types/papaparse": "^5.3.14",
     "@types/react": "^19",
