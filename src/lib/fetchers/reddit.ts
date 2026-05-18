@@ -11,8 +11,9 @@
  * Using snoowrap (PRAW's Node equivalent). Script-type Reddit apps get
  * instant approval — this is the fastest fetcher to enable.
  *
- * Note: snoowrap's types are loose, so we narrow at the boundary. Each
- * response from Reddit is documented at reddit.com/dev/api.
+ * Note: snoowrap's types are known to be incomplete (limit, restrictSr etc.
+ * are valid Reddit API params but missing from the typedef). We cast search
+ * options through `unknown` to avoid fighting the stale type declarations.
  *
  * Snapshots written when configured:
  *   - 'reddit', 'mention_count_30d'   (value_numeric)
@@ -43,6 +44,10 @@ export interface RedditOptions {
   topThreadsLimit?: number;
   triggerKind?: "manual" | "cron" | "on_demand";
 }
+
+// Snoowrap's search types are incomplete — cast through this to pass
+// valid Reddit API params that aren't reflected in the type definitions.
+type AnySearchOpts = Record<string, unknown>;
 
 // =========================================================================
 // snoowrap client (lazy singleton)
@@ -101,18 +106,26 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
       if (subs.length === 0) {
         // Site-wide search
         const res = await client
-          .search({ query, time: "month", sort: "new", limit: 100 })
+          .search({ query, time: "month", sort: "new", limit: 100 } as unknown as Snoowrap.SearchOptions)
           .then((r) => r as unknown as Snoowrap.Submission[]);
         allResults = res;
       } else {
-        // Per-subreddit search — restrictSr is implied when calling
-        // .getSubreddit(sub).search(), so we omit it to satisfy the type.
+        // Per-subreddit search — restrictSr and limit are valid Reddit API
+        // params but absent from snoowrap's BaseSearchOptions typedef, so
+        // we cast through AnySearchOpts.
         const seen = new Set<string>();
         for (const sub of subs) {
           try {
+            const searchOpts: AnySearchOpts = {
+              query,
+              time: "month",
+              sort: "new",
+              limit: 50,
+              restrict_sr: true,
+            };
             const res = await client
               .getSubreddit(sub)
-              .search({ query, time: "month", sort: "new", limit: 50 })
+              .search(searchOpts as unknown as Snoowrap.SearchOptions)
               .then((r) => r as unknown as Snoowrap.Submission[]);
             for (const r of res) {
               if (!seen.has(r.id)) {
