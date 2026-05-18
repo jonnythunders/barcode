@@ -18,9 +18,6 @@
  *   - 'reddit', 'mention_count_30d'   (value_numeric)
  *   - 'reddit', 'mention_velocity'    (value_numeric, this_window/prior_window - 1)
  *   - 'reddit', 'top_threads'         (value_json)
- *
- * The comment text from top threads is NOT stored here — that's handled
- * by the sentiment module which fetches comments lazily when needed.
  */
 import Snoowrap from "snoowrap";
 import { getServerEnv, getFeatureFlags } from "@/lib/env";
@@ -32,7 +29,7 @@ export interface RedditResult {
   windowDays: number;
   mentionCount: number;
   priorMentionCount: number;
-  velocity: number | null;             // (this - prior) / prior; null if prior=0
+  velocity: number | null;
   topThreads: RedditThreadSummary[];
   subredditsSearched: string[];
   capturedAt: string;
@@ -41,11 +38,9 @@ export interface RedditResult {
 export interface RedditOptions {
   brandId: string;
   brandName: string;
-  // Optional subreddit list to focus the search. If empty, we do a
-  // site-wide search.
   subreddits?: string[];
-  windowDays?: number;                 // default 30
-  topThreadsLimit?: number;            // default 5
+  windowDays?: number;
+  topThreadsLimit?: number;
   triggerKind?: "manual" | "cron" | "on_demand";
 }
 
@@ -68,7 +63,6 @@ function getRedditClient(): Snoowrap {
     username: env.redditUsername,
     password: env.redditPassword,
   });
-  // Be a good citizen — Reddit's API caps at 60 req/min for script apps.
   _client.config({ requestDelay: 1000, continueAfterRatelimitError: true });
   return _client;
 }
@@ -102,9 +96,6 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
 
       const subs = opts.subreddits ?? [];
       const query = `"${opts.brandName}"`;
-
-      // We pull a generous limit and filter by timestamp client-side, because
-      // Reddit's API doesn't accept date filters on search.
       let allResults: Snoowrap.Submission[] = [];
 
       if (subs.length === 0) {
@@ -114,13 +105,14 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
           .then((r) => r as unknown as Snoowrap.Submission[]);
         allResults = res;
       } else {
-        // Per-subreddit search, deduped by id
+        // Per-subreddit search — restrictSr is implied when calling
+        // .getSubreddit(sub).search(), so we omit it to satisfy the type.
         const seen = new Set<string>();
         for (const sub of subs) {
           try {
             const res = await client
               .getSubreddit(sub)
-              .search({ query, time: "month", sort: "new", restrictSr: true, limit: 50 })
+              .search({ query, time: "month", sort: "new", limit: 50 })
               .then((r) => r as unknown as Snoowrap.Submission[]);
             for (const r of res) {
               if (!seen.has(r.id)) {
@@ -129,13 +121,12 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
               }
             }
           } catch (err) {
-            // Subreddit might be banned/private/quarantined — skip it
             console.warn(`[reddit] search in r/${sub} failed: ${err}`);
           }
         }
       }
 
-      // Bucket by time window. created_utc is in seconds.
+      // Bucket by time window
       const inWindow: Snoowrap.Submission[] = [];
       const inPriorWindow: Snoowrap.Submission[] = [];
       for (const s of allResults) {
@@ -149,7 +140,6 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
           ? (inWindow.length - inPriorWindow.length) / inPriorWindow.length
           : null;
 
-      // Top threads by score
       const topThreads: RedditThreadSummary[] = inWindow
         .sort((a, b) => b.score - a.score)
         .slice(0, topLimit)
@@ -162,7 +152,6 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
           postedAt: new Date(s.created_utc * 1000).toISOString(),
         }));
 
-      // Persist snapshots
       const snaps: Promise<void>[] = [
         writeSnapshot({
           brandId: opts.brandId,
@@ -213,12 +202,6 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
   );
 }
 
-/**
- * Pull comment text from a list of thread URLs — used by the sentiment
- * module. We separate this from `fetchReddit` because comment fetching is
- * rate-limit-heavy and we only want to do it when sentiment is actually
- * being computed (not on every brand card refresh).
- */
 export async function fetchRedditCommentSample(
   threadUrls: string[],
   maxCommentsPerThread: number = 20
@@ -227,9 +210,7 @@ export async function fetchRedditCommentSample(
   const out: { threadUrl: string; comments: string[] }[] = [];
 
   for (const url of threadUrls) {
-    // Convert permalink to submission id. snoowrap accepts full URL via getSubmission.
     try {
-      // Extract submission id from URL: .../comments/{id}/...
       const m = /\/comments\/([a-z0-9]+)\//i.exec(url);
       if (!m) continue;
       const submission = client.getSubmission(m[1]);
