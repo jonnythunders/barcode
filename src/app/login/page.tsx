@@ -45,11 +45,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="h-screen flex items-center justify-center bg-slate-50">
+    <div className="h-screen flex items-center justify-center bc-page-texture">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-900">Barcode</h1>
-          <p className="text-sm text-slate-500 mt-1">Brand Intelligence</p>
+          <div className="inline-flex items-center gap-2.5">
+            <span className="bc-barcode" style={{ height: 24, width: 30 }} aria-hidden="true" />
+            <div className="text-left leading-none">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">Barcode</h1>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700 mt-1">Scout</p>
+            </div>
+          </div>
+          <p className="text-sm text-slate-500 mt-3">Find the brands worth calling.</p>
         </div>
         <form
           onSubmit={handleSubmit}

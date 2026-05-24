@@ -28,7 +28,7 @@ export default function ViewsLayout({ children }: { children: React.ReactNode })
   return (
     <ProtectedRoute>
       <ChatProvider>
-        <div className="h-screen flex overflow-hidden bg-slate-50">
+        <div className="h-screen flex overflow-hidden bc-page-texture">
           <LeftSidebar />
           <div className="w-[420px] flex-shrink-0 pt-2.5 pl-2.5 pb-2.5 print:hidden">
             <div className="h-full">

@@ -346,7 +346,7 @@ export function renderDeepDiveHtml(payload: DeepDivePayload): string {
 
         <!-- Header -->
         <tr><td style="padding:28px 36px 18px 36px;border-bottom:1px solid #e2e8f0">
-          <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#94a3b8">Barcode · Monthly Category Deep Dive</p>
+          <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#94a3b8">Barcode Scout &middot; Monthly Category Deep Dive</p>
           <h1 style="margin:6px 0 0 0;font-size:24px;font-weight:600;color:#0f172a">${escapeHtml(catList)}</h1>
           <p style="margin:6px 0 0 0;font-size:13px;color:#64748b">
             ${escapeHtml(payload.periodStart ?? "")}${payload.periodStart && payload.periodEnd ? " – " : ""}${escapeHtml(payload.periodEnd ?? "")}

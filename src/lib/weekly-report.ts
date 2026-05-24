@@ -344,7 +344,7 @@ export function renderWeeklyReportHtml(payload: WeeklyReportPayload): string {
 
         <!-- Header -->
         <tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #e2e8f0">
-          <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#94a3b8">Barcode · Weekly Brand Radar</p>
+          <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#94a3b8">Barcode Scout &middot; Weekly Brand Radar</p>
           <h1 style="margin:6px 0 0 0;font-size:22px;font-weight:600;color:#0f172a">Top brands to call this week</h1>
           <p style="margin:6px 0 0 0;font-size:13px;color:#64748b">${escape(payload.periodStart)} – ${escape(payload.periodEnd)} · ${escape(catList)}</p>
         </td></tr>

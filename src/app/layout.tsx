@@ -5,8 +5,8 @@ import { AuthProvider } from "@/contexts/auth-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Barcode — Brand Intelligence",
-  description: "Triangulated social, retail, and trend signals for the Barcode sales team.",
+  title: "Barcode Scout — Brand Prospecting",
+  description: "Triangulated social, retail, and trend signals that surface emerging brands ready for retail — for the Barcode sales team.",
 };
 
 export default function RootLayout({

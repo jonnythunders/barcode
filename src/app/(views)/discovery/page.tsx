@@ -98,20 +98,20 @@ export default function DiscoveryPage() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-4">
       <div>
-        <p className="text-xs uppercase tracking-widest text-slate-400">Discovery</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">Discovery</p>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 mt-1">
-          Brands found by the crawlers
+          Brands worth a look
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Last 30 days. Sorted by latest Momentum Score. Click any row for the full Brand Card.
+          Ranked by Momentum Score — highest-opportunity brands first. Click any row for the full Brand Card.
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-500" />
-            Recent discoveries
+            <Sparkles className="w-4 h-4 text-teal-600" />
+            Top prospects
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -119,20 +119,32 @@ export default function DiscoveryPage() {
             <p className="text-sm text-slate-400">Loading...</p>
           ) : brands.length === 0 ? (
             <p className="text-sm text-slate-500">
-              Nothing yet. Once <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">/api/cron/weekly-poll</code>{" "}
-              runs (or you hit it manually with the CRON_SECRET), discovered brands will land here.
+              Nothing here yet. As brands are surfaced from social, retail, and trend signals, the
+              highest-opportunity ones will rank here automatically.
             </p>
           ) : (
             <ul className="divide-y divide-slate-100 -mx-5">
-              {brands.map((b) => {
+              {brands.map((b, i) => {
                 const src = SOURCE_LABELS[b.discovery_source] ?? SOURCE_LABELS.manual;
+                const score = b.momentumScore;
+                const scoreColor =
+                  score == null
+                    ? "text-slate-400 bg-slate-100"
+                    : score >= 70
+                      ? "text-emerald-700 bg-emerald-50"
+                      : score >= 50
+                        ? "text-amber-700 bg-amber-50"
+                        : "text-slate-500 bg-slate-100";
                 return (
-                  <li key={b.id} className="px-5 py-3 hover:bg-slate-50 transition-colors">
-                    <Link href={`/brand-card/${b.slug}`} className="flex items-center justify-between gap-3">
+                  <li key={b.id} className="px-5 py-3 hover:bg-slate-50/80 transition-colors group">
+                    <Link href={`/brand-card/${b.slug}`} className="flex items-center gap-3">
+                      <span className="w-6 flex-shrink-0 text-right text-xs font-semibold tabular-nums text-slate-300 group-hover:text-teal-600 transition-colors">
+                        {i + 1}
+                      </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-slate-900 truncate">{b.name}</p>
-                          <span className={`text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full ${src.color}`}>
+                          <p className="text-sm font-semibold text-slate-900 truncate">{b.name}</p>
+                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${src.color}`}>
                             {src.label}
                           </span>
                         </div>
@@ -141,19 +153,12 @@ export default function DiscoveryPage() {
                           First seen {new Date(b.first_seen_at).toLocaleDateString()}
                         </p>
                       </div>
-                      <div className="flex-shrink-0 text-right">
-                        {b.momentumScore != null ? (
-                          <p
-                            className={`text-lg font-bold ${
-                              b.momentumScore >= 70
-                                ? "text-green-600"
-                                : b.momentumScore >= 50
-                                  ? "text-amber-600"
-                                  : "text-slate-500"
-                            }`}
-                          >
-                            {b.momentumScore}
-                          </p>
+                      <div className="flex-shrink-0">
+                        {score != null ? (
+                          <div className={`flex items-baseline gap-0.5 px-2.5 py-1 rounded-lg ${scoreColor}`}>
+                            <span className="text-lg font-bold tabular-nums leading-none">{score}</span>
+                            <span className="text-[9px] font-medium opacity-60">/100</span>
+                          </div>
                         ) : (
                           <p className="text-xs text-slate-400">No score yet</p>
                         )}

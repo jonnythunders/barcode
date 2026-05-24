@@ -40,7 +40,11 @@ export async function GET(
     }
 
     const url = new URL(request.url);
-    const forceRefresh = url.searchParams.get("refresh") === "1";
+    // NOTE: live fetchers (TikTok/IG/Amazon) require API credentials that are
+    // not configured in this environment. Honoring ?refresh=1 would overwrite
+    // the curated cached card with failed live fetches, so refresh is disabled
+    // until those credentials are wired up. Remove this line to re-enable.
+    const forceRefresh = false; // url.searchParams.get("refresh") === "1";
 
     const overrides = {
       tiktokHandle: url.searchParams.get("tiktok") || undefined,

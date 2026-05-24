@@ -173,6 +173,18 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
     errors: partialFetches,
   });
 
+  // Guard: don't let a mostly-failed live fetch clobber a good existing card.
+  // If most platform fetches failed (e.g. missing API credentials), preserve
+  // whatever is already cached rather than overwriting it with errors.
+  const failedCount = Object.keys(partialFetches).length;
+  if (failedCount >= 4) {
+    const existing = await readCacheRaw(brandId);
+    if (existing) {
+      console.log(`[brand-card] ${resolution.brandName}: live fetch mostly failed (${failedCount}), keeping cached card`);
+      return existing;
+    }
+  }
+
   await writeCache(brandId, card);
   console.log(`[brand-card] ${resolution.brandName} assembled in ${Date.now() - startedAt}ms (partial=${card.partial})`);
   return card;
@@ -181,6 +193,18 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
 // =========================================================================
 // Cache
 // =========================================================================
+
+/** Read the cached card ignoring TTL — used as a fallback when a live
+ *  fetch mostly fails so we never serve errors over a good cached card. */
+async function readCacheRaw(brandId: string): Promise<BrandCard | null> {
+  const db = getAdminSupabase();
+  const { data } = await db
+    .from("brand_card_cache")
+    .select("payload")
+    .eq("brand_id", brandId)
+    .maybeSingle();
+  return data ? (data.payload as BrandCard) : null;
+}
 
 async function readCache(brandId: string): Promise<BrandCard | null> {
   const db = getAdminSupabase();

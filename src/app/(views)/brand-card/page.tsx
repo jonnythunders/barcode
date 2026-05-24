@@ -27,7 +27,7 @@ export default function BrandCardLookupPage() {
   return (
     <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
       <div>
-        <p className="text-xs uppercase tracking-widest text-slate-400">Brand Card</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">Brand Card</p>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 mt-1">
           On-demand brand intelligence
         </h1>
@@ -43,7 +43,7 @@ export default function BrandCardLookupPage() {
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Try: Olipop, Vacation Sunscreen, Magic Spoon..."
+            placeholder="Try: SEED, Momentous, Summer Fridays..."
             className="pl-9"
             autoFocus
           />
@@ -53,7 +53,7 @@ export default function BrandCardLookupPage() {
 
       <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-600">
         <p className="font-medium text-slate-900 mb-1">Tip</p>
-        <p>You can also ask Barry directly in the chat panel. Try “What&apos;s the latest on Liquid Death?” or “Compare Olipop and Spindrift.”</p>
+        <p>You can also ask Barry directly in the chat panel. Try “What&apos;s the latest on SEED?” or “Compare Momentous and Summer Fridays.”</p>
       </div>
     </div>
   );

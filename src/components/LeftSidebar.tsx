@@ -28,27 +28,49 @@ export function LeftSidebar() {
   };
 
   return (
-    <div className="w-40 bg-white flex flex-col flex-shrink-0 print:hidden">
-      <div className="px-6 pt-6 pb-2">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Barcode</p>
+    <div className="w-44 bg-white flex flex-col flex-shrink-0 border-r border-slate-100 print:hidden">
+      <div className="px-5 pt-6 pb-5">
+        <div className="flex items-center gap-2">
+          <span className="bc-barcode" aria-hidden="true" />
+          <div className="leading-none">
+            <p className="text-[13px] font-bold tracking-tight text-slate-900">Barcode</p>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-teal-700 mt-0.5">Scout</p>
+          </div>
+        </div>
       </div>
-      <nav className="flex-1 flex flex-col px-6 pt-4">
-        <ul className="space-y-3">
-          {NAV.map((item) => (
-            <li key={item.path}>
-              <button
-                onClick={() => router.push(item.path)}
-                className={`flex items-center gap-2.5 text-sm font-medium transition-opacity text-black ${
-                  isActive(item.path) ? "opacity-100" : "opacity-35 hover:opacity-100"
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            </li>
-          ))}
+      <nav className="flex-1 flex flex-col px-3 pt-2">
+        <ul className="space-y-0.5">
+          {NAV.map((item) => {
+            const active = isActive(item.path);
+            return (
+              <li key={item.path}>
+                <button
+                  onClick={() => router.push(item.path)}
+                  className={`group relative flex items-center gap-2.5 w-full rounded-lg pl-3 pr-2 py-2 text-sm font-medium transition-all ${
+                    active
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
+                >
+                  <span
+                    className={`absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-full bg-teal-500 transition-opacity ${
+                      active ? "opacity-100" : "opacity-0"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className={active ? "text-teal-300" : "text-slate-400 group-hover:text-slate-600"}>
+                    {item.icon}
+                  </span>
+                  {item.label}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </nav>
+      <div className="px-5 pb-5 pt-3">
+        <div className="bc-rule" aria-hidden="true" />
+      </div>
     </div>
   );
 }

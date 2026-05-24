@@ -107,7 +107,7 @@ export default function NielsenPage() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-4">
       <div>
-        <p className="text-xs uppercase tracking-widest text-slate-400">Nielsen / IRI / Circana</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">Nielsen / IRI / Circana</p>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 mt-1">
           Upload retail scan data
         </h1>

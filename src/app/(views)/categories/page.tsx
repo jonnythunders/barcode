@@ -35,13 +35,13 @@ export default function CategoriesPage() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-4">
       <div>
-        <p className="text-xs uppercase tracking-widest text-slate-400">Categories</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">Categories</p>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 mt-1">
           Discovery seeds per category
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Hashtags and subreddits below drive the discovery engine. Edit in Supabase directly
-          for now (a UI editor is coming after Phase 5).
+          Hashtags, subreddits, and search terms below drive the discovery engine for each
+          category.
         </p>
       </div>
 

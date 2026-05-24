@@ -96,7 +96,7 @@ export default function DashboardPage() {
   return (
     <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
       <div>
-        <p className="text-xs uppercase tracking-widest text-slate-400">Dashboard</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">Dashboard</p>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 mt-1">
           Welcome back{user?.email ? `, ${user.email.split("@")[0]}` : ""}
         </h1>
@@ -109,7 +109,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader className="flex items-center justify-between flex-row">
           <CardTitle className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-500" />
+            <Sparkles className="w-4 h-4 text-teal-600" />
             Top brands by momentum
           </CardTitle>
           <Link href="/discovery" className="text-xs text-slate-500 hover:text-slate-900 flex items-center gap-1">
@@ -134,9 +134,9 @@ export default function DashboardPage() {
                   </Link>
                   <div className="flex-shrink-0 text-right">
                     <p
-                      className={`text-lg font-bold ${
+                      className={`text-lg font-bold tabular-nums ${
                         (b.momentumScore ?? 0) >= 70
-                          ? "text-green-600"
+                          ? "text-emerald-600"
                           : (b.momentumScore ?? 0) >= 50
                             ? "text-amber-600"
                             : "text-slate-500"

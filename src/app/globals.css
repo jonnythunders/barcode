@@ -2,9 +2,10 @@
 @import "tw-animate-css";
 
 /* ===========================================================================
-   Barcode design tokens
+   Barcode Intelligence — design tokens
    ----------------------------------------------------------------------------
-   Light mode by default. Tweak when Barcode shares brand colors.
+   Editorial / retail-tech aesthetic: near-black ink, deep-teal accent,
+   precise type. Mirrors thebarcodegroup.com's clean, confident brand.
    =========================================================================== */
 @layer base {
   :root {
@@ -26,23 +27,28 @@
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
 
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 175 84% 26%;          /* deep teal — brand accent */
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 222 47% 11%;
+    --ring: 175 84% 26%;
 
     --radius: 0.5rem;
 
+    /* Brand accent ramp */
+    --brand-ink: 222 47% 11%;
+    --brand-teal: 175 84% 26%;
+    --brand-teal-soft: 168 76% 42%;
+
     /* Momentum-score / quadrant accent colors */
-    --momentum-high: 142 71% 45%;   /* green */
+    --momentum-high: 160 84% 39%;   /* emerald */
     --momentum-mid: 38 92% 50%;     /* amber */
     --momentum-low: 215 16% 47%;    /* slate */
-    --quadrant-call-now: 142 71% 45%;
+    --quadrant-call-now: 160 84% 39%;
   }
 
   * {
@@ -51,6 +57,51 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv01" 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Brand motifs
+   ------------------------------------------------------------------------- */
+@layer components {
+  /* Barcode stripe mark — used in the sidebar wordmark */
+  .bc-barcode {
+    display: inline-block;
+    height: 18px;
+    width: 22px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      hsl(var(--brand-ink)) 0, hsl(var(--brand-ink)) 1.5px,
+      transparent 1.5px, transparent 3px,
+      hsl(var(--brand-ink)) 3px, hsl(var(--brand-ink)) 4px,
+      transparent 4px, transparent 6px,
+      hsl(var(--brand-ink)) 6px, hsl(var(--brand-ink)) 8px,
+      transparent 8px, transparent 9.5px
+    );
+    border-radius: 1px;
+  }
+
+  /* Subtle dotted page texture for app background */
+  .bc-page-texture {
+    background-color: hsl(210 40% 98%);
+    background-image: radial-gradient(hsl(214 32% 91% / 0.6) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /* Thin barcode rule — decorative divider */
+  .bc-rule {
+    height: 14px;
+    width: 100%;
+    background-image: repeating-linear-gradient(
+      90deg,
+      hsl(var(--brand-ink)) 0, hsl(var(--brand-ink)) 1px,
+      transparent 1px, transparent 3px,
+      hsl(var(--brand-ink)) 3px, hsl(var(--brand-ink)) 4.5px,
+      transparent 4.5px, transparent 8px
+    );
+    opacity: 0.12;
   }
 }

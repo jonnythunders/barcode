@@ -62,7 +62,7 @@ export default function ReportsPage() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-4">
       <div>
-        <p className="text-xs uppercase tracking-widest text-slate-400">Reports</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">Reports</p>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 mt-1">
           Weekly + monthly intelligence reports
         </h1>
@@ -77,7 +77,7 @@ export default function ReportsPage() {
             <p className="text-sm text-slate-400">Loading...</p>
           ) : reports.length === 0 ? (
             <p className="text-sm text-slate-500">
-              No reports yet. Ask Barry to “queue a weekly report” or wait for Monday morning&apos;s cron.
+              No reports yet. Ask Barry to “queue a weekly scouting report,” or they’ll generate automatically on your weekly and monthly schedule.
             </p>
           ) : (
             <ul className="divide-y divide-slate-100 -mx-5">
