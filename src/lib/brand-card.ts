@@ -215,21 +215,47 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
 // Cache
 // =========================================================================
 
-/** Find a tracked (demo-seeded) brand by name, case-insensitively. Returns the
- *  brand row id+name if it's part of the curated universe, else null. */
+/** Normalize a brand name for forgiving matching: lowercased, '&'<->'and'
+ *  unified, punctuation stripped, whitespace collapsed. So "Head & Shoulders",
+ *  "Head and Shoulders", and "head&shoulders" all compare equal. */
+function normalizeBrandName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/** Find a tracked (demo-seeded) brand by name with forgiving matching. First
+ *  tries an exact case-insensitive hit; if that misses, normalizes the input
+ *  and compares against all seeded brands so '&' vs 'and', punctuation, and
+ *  spacing differences don't cause a miss. Returns the brand id+name or null. */
 async function findTrackedBrand(name: string): Promise<{ id: string; name: string } | null> {
   const db = getAdminSupabase();
   const trimmed = name.trim();
   if (!trimmed) return null;
-  const { data } = await db
+
+  // Fast path: exact case-insensitive match.
+  const { data: exact } = await db
     .from("brands")
-    .select("id,name,tags")
+    .select("id,name")
     .ilike("name", trimmed)
     .contains("tags", ["demo-seed"])
     .limit(1)
     .maybeSingle();
-  if (!data) return null;
-  return { id: data.id, name: data.name };
+  if (exact) return { id: exact.id, name: exact.name };
+
+  // Forgiving path: normalize and compare against all seeded brands.
+  const target = normalizeBrandName(trimmed);
+  if (!target) return null;
+  const { data: all } = await db
+    .from("brands")
+    .select("id,name")
+    .contains("tags", ["demo-seed"]);
+  if (!all) return null;
+  const hit = all.find((b) => normalizeBrandName(b.name) === target);
+  return hit ? { id: hit.id, name: hit.name } : null;
 }
 
 /** A clean "this brand isn't tracked yet" card. Returned for any name outside

@@ -204,7 +204,16 @@ function buildCard(r: SeedRow, brandId: string) {
 
 async function main() {
   const supabase = getAdminSupabase();
+  // Load H&B brands, plus F&B brands if that seed file is present. Cards are
+  // built for every demo brand found in either file.
   const rows: SeedRow[] = JSON.parse(readFileSync(join(process.cwd(), "data", "seed-demo.json"), "utf-8"));
+  try {
+    const fnb: SeedRow[] = JSON.parse(readFileSync(join(process.cwd(), "data", "seed-demo-fnb.json"), "utf-8"));
+    rows.push(...fnb);
+    console.log(`Loaded ${fnb.length} Functional Beverages brands too.`);
+  } catch {
+    // F&B seed file not present — H&B only.
+  }
 
   // Map brand name -> brand_id from the DB
   const { data: brands, error } = await supabase.from("brands").select("id,name").contains("tags", ["demo-seed"]);

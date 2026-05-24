@@ -11,6 +11,7 @@
     "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
     "seed": "node --env-file=.env.local --import tsx scripts/seed.ts",
     "seed:demo": "node --env-file=.env.local --import tsx scripts/seed-demo.ts",
+    "seed:demo:fnb": "node --env-file=.env.local --import tsx scripts/seed-demo-fnb.ts",
     "seed:cards": "node --env-file=.env.local --import tsx scripts/seed-cards.ts",
     "seed:reports": "node --env-file=.env.local --import tsx scripts/seed-reports.ts",
     "poll-once": "node --env-file=.env.local --import tsx scripts/poll-once.ts",

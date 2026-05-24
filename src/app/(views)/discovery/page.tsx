@@ -40,6 +40,8 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
  */
 export default function DiscoveryPage() {
   const [brands, setBrands] = useState<DiscoveredBrand[]>([]);
+  const [categories, setCategories] = useState<{ id: string; display_name: string }[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>("all");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,6 +49,13 @@ export default function DiscoveryPage() {
     const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     (async () => {
+      // Load categories that actually have tracked brands, for the filter bar.
+      const { data: cats } = await supabase
+        .from("categories")
+        .select("id, display_name")
+        .eq("is_active", true)
+        .order("display_name", { ascending: true });
+
       const { data: raw } = await supabase
         .from("brands")
         .select("id, name, slug, discovery_source, first_seen_at, notes, primary_category_id")
@@ -91,9 +100,18 @@ export default function DiscoveryPage() {
 
       enriched.sort((a, b) => (b.momentumScore ?? -1) - (a.momentumScore ?? -1));
       setBrands(enriched);
+
+      // Only show category chips that actually have brands in the feed.
+      const usedCatIds = new Set(enriched.map((b) => b.primary_category_id).filter(Boolean));
+      setCategories((cats ?? []).filter((c) => usedCatIds.has(c.id)));
       setLoading(false);
     })();
   }, []);
+
+  const visibleBrands =
+    activeCategory === "all"
+      ? brands
+      : brands.filter((b) => b.primary_category_id === activeCategory);
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-4">
@@ -107,6 +125,35 @@ export default function DiscoveryPage() {
         </p>
       </div>
 
+      {/* Category filter — a VP can view all, or focus a single category purview */}
+      {categories.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setActiveCategory("all")}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+              activeCategory === "all"
+                ? "bg-slate-900 text-white"
+                : "bg-white border border-slate-200 text-slate-600 hover:border-slate-300"
+            }`}
+          >
+            All categories
+          </button>
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setActiveCategory(c.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                activeCategory === c.id
+                  ? "bg-slate-900 text-white"
+                  : "bg-white border border-slate-200 text-slate-600 hover:border-slate-300"
+              }`}
+            >
+              {c.display_name}
+            </button>
+          ))}
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -117,14 +164,14 @@ export default function DiscoveryPage() {
         <CardContent>
           {loading ? (
             <p className="text-sm text-slate-400">Loading...</p>
-          ) : brands.length === 0 ? (
+          ) : visibleBrands.length === 0 ? (
             <p className="text-sm text-slate-500">
               Nothing here yet. As brands are surfaced from social, retail, and trend signals, the
               highest-opportunity ones will rank here automatically.
             </p>
           ) : (
             <ul className="divide-y divide-slate-100 -mx-5">
-              {brands.map((b, i) => {
+              {visibleBrands.map((b, i) => {
                 const src = SOURCE_LABELS[b.discovery_source] ?? SOURCE_LABELS.manual;
                 const score = b.momentumScore;
                 const scoreColor =
