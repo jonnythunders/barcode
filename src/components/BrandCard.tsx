@@ -228,6 +228,12 @@ export function BrandCard({ card }: { card: BrandCardData }) {
           </ul>
         </div>
       )}
+
+      {/* Provenance footnote */}
+      <p className="text-[11px] text-slate-400 px-1 pt-1">
+        Amazon &amp; retail figures derived from SmartScout and Nielsen data. Social and sentiment
+        signals are representative sample data for this preview.
+      </p>
     </div>
   );
 }

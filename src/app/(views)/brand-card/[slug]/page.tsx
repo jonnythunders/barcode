@@ -2,7 +2,8 @@
 
 import { use, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { RefreshCw, AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { RefreshCw, AlertCircle, Search } from "lucide-react";
 import { BrandCard as BrandCardView } from "@/components/BrandCard";
 import { Button } from "@/components/ui/button";
 import type { BrandCard as BrandCardData } from "@/lib/types";
@@ -55,19 +56,23 @@ export default function BrandCardDetailPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryName]);
 
+  const isNotTracked = Boolean(card && (card as BrandCardData & { notTracked?: boolean }).notTracked);
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 space-y-4">
       <div className="flex items-center justify-end">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fetchCard(true)}
-          disabled={refreshing || loading}
-          className="gap-1.5"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          {refreshing ? "Refreshing..." : "Refresh"}
-        </Button>
+        {!isNotTracked && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchCard(true)}
+            disabled={refreshing || loading}
+            className="gap-1.5"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </Button>
+        )}
       </div>
 
       {loading && (
@@ -86,7 +91,28 @@ export default function BrandCardDetailPage({
         </div>
       )}
 
-      {card && <BrandCardView card={card} />}
+      {card && isNotTracked && (
+        <div className="border border-slate-200 bg-white rounded-2xl px-8 py-12 text-center">
+          <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+            <Search className="w-5 h-5 text-slate-400" />
+          </div>
+          <h2 className="text-xl font-semibold text-slate-900">
+            &ldquo;{card.brand.name}&rdquo; isn&apos;t tracked yet
+          </h2>
+          <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+            Scout currently covers the Health &amp; Beauty brands surfaced from the latest
+            SmartScout and Nielsen pull. Browse the ranked list, or ask Barry to compare brands
+            that are in the set.
+          </p>
+          <div className="mt-6 flex items-center justify-center gap-3">
+            <Link href="/discovery">
+              <Button size="sm" className="gap-1.5">Browse Discovery</Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {card && !isNotTracked && <BrandCardView card={card} />}
     </div>
   );
 }

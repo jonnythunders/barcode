@@ -60,6 +60,19 @@ function notFoundResult<T>(reason: string): FetcherResult<T> {
 export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   const startedAt = Date.now();
 
+  // --- Step 0: tracked-brand guard ---
+  // This tool tracks a curated universe of brands (the ones surfaced from the
+  // SmartScout x Nielsen analysis). Live fetchers for arbitrary brands require
+  // API credentials that aren't configured, so rather than show a broken card
+  // full of errors for an untracked name, return a clean "not tracked" card.
+  const tracked = await findTrackedBrand(opts.brandName);
+  if (tracked) {
+    const seeded = await readCacheRaw(tracked.id);
+    if (seeded) return seeded;
+  } else {
+    return notTrackedCard(opts.brandName);
+  }
+
   // --- Step 1: handle resolution ---
   const resolution = await resolveBrandHandles({
     brandName: opts.brandName,
@@ -201,6 +214,50 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
 // =========================================================================
 // Cache
 // =========================================================================
+
+/** Find a tracked (demo-seeded) brand by name, case-insensitively. Returns the
+ *  brand row id+name if it's part of the curated universe, else null. */
+async function findTrackedBrand(name: string): Promise<{ id: string; name: string } | null> {
+  const db = getAdminSupabase();
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const { data } = await db
+    .from("brands")
+    .select("id,name,tags")
+    .ilike("name", trimmed)
+    .contains("tags", ["demo-seed"])
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return { id: data.id, name: data.name };
+}
+
+/** A clean "this brand isn't tracked yet" card. Returned for any name outside
+ *  the curated universe so the UI never shows a wall of live-fetch errors. */
+function notTrackedCard(name: string): BrandCard {
+  const now = nowIso();
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const block = { status: "skipped" as const, capturedAt: now };
+  return {
+    brand: { id: "", name, slug, primaryCategory: null },
+    resolved: {
+      tiktokHandle: null, instagramHandle: null, amazonBrand: null,
+      websiteUrl: null, resolutionConfidence: "unresolved",
+    },
+    tiktok: block, instagram: block, amazon: block,
+    googleTrends: block, reddit: block, sentiment: block,
+    momentumScore: { score: null, asOf: now },
+    narrative:
+      `“${name}” isn’t in the tracked brand set yet. Scout currently covers the ` +
+      `Health & Beauty brands surfaced from the latest SmartScout and Nielsen pull. ` +
+      `Add it to the watchlist to start tracking, or try one of the ranked brands in Discovery.`,
+    recommendedAction: null,
+    generatedAt: now,
+    partial: false,
+    errors: {},
+    notTracked: true,
+  } as BrandCard & { notTracked: true };
+}
 
 /** True if the brand row is a demo-seeded brand (tags contain 'demo-seed').
  *  Seeded brands have curated cards that must never be overwritten by a live
