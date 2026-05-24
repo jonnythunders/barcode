@@ -5,7 +5,7 @@ import { AuthProvider } from "@/contexts/auth-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Barcode Scout — Brand Prospecting",
+  title: "Barcode Kestrel — Brand Prospecting",
   description: "Triangulated social, retail, and trend signals that surface emerging brands ready for retail — for the Barcode sales team.",
 };
 

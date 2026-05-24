@@ -52,7 +52,7 @@ export default function LoginPage() {
             <span className="bc-barcode" style={{ height: 24, width: 30 }} aria-hidden="true" />
             <div className="text-left leading-none">
               <h1 className="text-2xl font-bold tracking-tight text-slate-900">Barcode</h1>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700 mt-1">Scout</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700 mt-1">Kestrel</p>
             </div>
           </div>
           <p className="text-sm text-slate-500 mt-3">Find the brands worth calling.</p>

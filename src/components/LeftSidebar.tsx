@@ -34,7 +34,7 @@ export function LeftSidebar() {
           <span className="bc-barcode" aria-hidden="true" />
           <div className="leading-none">
             <p className="text-[13px] font-bold tracking-tight text-slate-900">Barcode</p>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-teal-700 mt-0.5">Scout</p>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-teal-700 mt-0.5">Kestrel</p>
           </div>
         </div>
       </div>
@@ -70,9 +70,6 @@ export function LeftSidebar() {
       </nav>
       <div className="px-5 pb-5 pt-3">
         <div className="bc-rule" aria-hidden="true" />
-        <p className="mt-3 text-[9px] uppercase tracking-[0.16em] text-slate-300">
-          Discovery by Kestrel
-        </p>
       </div>
     </div>
   );

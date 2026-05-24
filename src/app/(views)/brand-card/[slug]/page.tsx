@@ -100,7 +100,7 @@ export default function BrandCardDetailPage({
             &ldquo;{card.brand.name}&rdquo; isn&apos;t tracked yet
           </h2>
           <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
-            Scout currently covers the brands surfaced from the latest Amazon and Nielsen
+            Kestrel currently covers the brands surfaced from the latest Amazon and Nielsen
             pull. Browse the ranked list, or ask Barry to compare brands that are in the set.
           </p>
           <div className="mt-6 flex items-center justify-center gap-3">

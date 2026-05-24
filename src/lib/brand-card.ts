@@ -274,7 +274,7 @@ function notTrackedCard(name: string): BrandCard {
     googleTrends: block, reddit: block, sentiment: block,
     momentumScore: { score: null, asOf: now },
     narrative:
-      `“${name}” isn’t in the tracked brand set yet. Scout currently covers the ` +
+      `“${name}” isn’t in the tracked brand set yet. Kestrel currently covers the ` +
       `brands surfaced from the latest Amazon and Nielsen pull. ` +
       `Add it to the watchlist to start tracking, or try one of the ranked brands in Discovery.`,
     recommendedAction: null,

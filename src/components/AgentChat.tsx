@@ -169,7 +169,7 @@ export function AgentChat() {
               <span className="text-lg font-bold text-white">B</span>
             </div>
             <p className="text-sm text-slate-600 max-w-[260px]">
-              I&apos;m Barry, the analyst inside Barcode Scout. Ask me to look up a brand,
+              I&apos;m Barry, the analyst inside Barcode Kestrel. Ask me to look up a brand,
               compare a few, or queue a report.
             </p>
             <div className="mt-5 w-full max-w-[280px] space-y-2">

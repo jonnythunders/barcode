@@ -104,7 +104,7 @@ async function main() {
         discovery_source: "nielsen_upload",  // shows in Discovery feed, not 'manual'
         first_seen_at: new Date().toISOString(),
         tags: ["demo-seed", "health-beauty", row.retail_presence.toLowerCase()],
-        notes: `${row.signal}. SmartScout H&B × Nielsen xAOC overlap analysis, April 2026.`,
+        notes: `${row.signal}. Amazon × Nielsen overlap analysis.`,
         is_monitored: true,
         is_archived: false,
       })
