@@ -72,6 +72,14 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   const brandId = resolution.brandId;
 
   // --- Step 2: cache check ---
+  // Demo-seeded brands have curated cards that must never be overwritten by a
+  // live fetch (live fetchers have no API credentials in this environment).
+  // For these, always return the cached card, ignoring TTL and forceRefresh.
+  if (await isSeededBrand(brandId)) {
+    const seeded = await readCacheRaw(brandId);
+    if (seeded) return seeded;
+  }
+
   if (!opts.forceRefresh) {
     const cached = await readCache(brandId);
     if (cached) return cached;
@@ -193,6 +201,20 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
 // =========================================================================
 // Cache
 // =========================================================================
+
+/** True if the brand row is a demo-seeded brand (tags contain 'demo-seed').
+ *  Seeded brands have curated cards that must never be overwritten by a live
+ *  fetch, so callers short-circuit to the cached card for these. */
+async function isSeededBrand(brandId: string): Promise<boolean> {
+  const db = getAdminSupabase();
+  const { data } = await db
+    .from("brands")
+    .select("tags")
+    .eq("id", brandId)
+    .maybeSingle();
+  const tags = (data?.tags ?? []) as string[];
+  return tags.includes("demo-seed");
+}
 
 /** Read the cached card ignoring TTL — used as a fallback when a live
  *  fetch mostly fails so we never serve errors over a good cached card. */

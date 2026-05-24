@@ -53,6 +53,49 @@ export function AgentChat() {
 
   const contextLabel = getContextLabel(pathname);
 
+  // Context-aware sample prompts shown in the empty state. Clicking one sends
+  // it straight to Barry — gives people an obvious way to start.
+  const samplePrompts: string[] = (() => {
+    if (pathname.startsWith("/discovery"))
+      return [
+        "Why is HomLand scored so high?",
+        "Which brands aren’t in retail yet?",
+        "Summarize this week’s top prospects",
+      ];
+    if (pathname.startsWith("/reports"))
+      return [
+        "Queue a weekly scouting report",
+        "What changed since last week?",
+        "Draft an intro email to SEED",
+      ];
+    if (pathname.startsWith("/brand-card"))
+      return [
+        "Look up SEED",
+        "Compare Momentous and Summer Fridays",
+        "Is this brand worth calling?",
+      ];
+    if (pathname.startsWith("/nielsen"))
+      return [
+        "Which categories are heating up?",
+        "Show brands missing from retail",
+        "Compare SEED to the category average",
+      ];
+    // Dashboard / default
+    return [
+      "Look up SEED",
+      "Compare Momentous and Summer Fridays",
+      "Which brands should I call first?",
+    ];
+  })();
+
+  const sendPrompt = useCallback(
+    (text: string) => {
+      if (isStreaming) return;
+      sendMessage(text);
+    },
+    [isStreaming, sendMessage]
+  );
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -121,15 +164,30 @@ export function AgentChat() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-              <span className="text-lg font-bold text-slate-400">B</span>
+          <div className="flex flex-col items-center justify-center h-full text-center px-2">
+            <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center mb-3">
+              <span className="text-lg font-bold text-white">B</span>
             </div>
-            <p className="text-sm text-slate-500">
-              Hi! I&apos;m Barry, your brand intelligence analyst.
-              <br />
-              Ask me to look up a brand, compare a few, or queue a report.
+            <p className="text-sm text-slate-600 max-w-[260px]">
+              I&apos;m Barry, the analyst inside Barcode Scout. Ask me to look up a brand,
+              compare a few, or queue a report.
             </p>
+            <div className="mt-5 w-full max-w-[280px] space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Try asking
+              </p>
+              {samplePrompts.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => sendPrompt(p)}
+                  disabled={isStreaming}
+                  className="group flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-[13px] text-slate-700 transition-all hover:border-teal-300 hover:bg-teal-50/50 disabled:opacity-50"
+                >
+                  <span className="text-teal-600 group-hover:translate-x-0.5 transition-transform">→</span>
+                  <span className="flex-1">{p}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
