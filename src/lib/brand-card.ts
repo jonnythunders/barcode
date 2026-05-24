@@ -275,7 +275,7 @@ function notTrackedCard(name: string): BrandCard {
     momentumScore: { score: null, asOf: now },
     narrative:
       `“${name}” isn’t in the tracked brand set yet. Scout currently covers the ` +
-      `Health & Beauty brands surfaced from the latest SmartScout and Nielsen pull. ` +
+      `brands surfaced from the latest Amazon and Nielsen pull. ` +
       `Add it to the watchlist to start tracking, or try one of the ranked brands in Discovery.`,
     recommendedAction: null,
     generatedAt: now,

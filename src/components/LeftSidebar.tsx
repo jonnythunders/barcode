@@ -70,6 +70,9 @@ export function LeftSidebar() {
       </nav>
       <div className="px-5 pb-5 pt-3">
         <div className="bc-rule" aria-hidden="true" />
+        <p className="mt-3 text-[9px] uppercase tracking-[0.16em] text-slate-300">
+          Discovery by Kestrel
+        </p>
       </div>
     </div>
   );
