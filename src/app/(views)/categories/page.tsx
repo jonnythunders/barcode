@@ -25,6 +25,7 @@ export default function CategoriesPage() {
     supabase
       .from("categories")
       .select("*")
+      .eq("is_active", true)
       .order("display_name")
       .then(({ data }) => {
         setCats(data ?? []);
