@@ -30,8 +30,9 @@ export function LeftSidebar() {
   return (
     <div className="w-44 bg-white flex flex-col flex-shrink-0 border-r border-slate-100 print:hidden">
       <div className="px-5 pt-6 pb-5">
-        <div className="flex items-center gap-2">
-          <span className="bc-barcode" aria-hidden="true" />
+        <div className="flex items-center gap-2.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/kestrel-mark.png" alt="Kestrel" className="h-7 w-7 object-contain" />
           <div className="leading-none">
             <p className="text-[13px] font-bold tracking-tight text-slate-900">Barcode</p>
             <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-teal-700 mt-0.5">Kestrel</p>

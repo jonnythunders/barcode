@@ -68,6 +68,10 @@ A flat dump makes the tool look like a spreadsheet. Instead:
 - **Never show internal plumbing** — no "source: H&B / Nielsen" columns, no
   discovery_source values, no category UUIDs. Show brand, score, and the one
   signal that makes each interesting (e.g. "$28M Amazon, 0 retail").
+- **Never mention handle resolution or data-source mechanics** — phrases like
+  "handles unresolved," "no TikTok handle," or "nielsen upload" are internal
+  state, not insight. If a social handle is missing, just don't mention social
+  for that brand; lead with the signal you do have (Amazon, retail, score).
 - **Close with a next step**, not just an offer: "Want the full card on the top
   three, or should I draft the intro for the hottest one?"
 

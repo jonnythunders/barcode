@@ -48,8 +48,9 @@ export default function LoginPage() {
     <div className="h-screen flex items-center justify-center bc-page-texture">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2.5">
-            <span className="bc-barcode" style={{ height: 24, width: 30 }} aria-hidden="true" />
+          <div className="inline-flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/kestrel-mark.png" alt="Kestrel" className="h-12 w-12 object-contain" />
             <div className="text-left leading-none">
               <h1 className="text-2xl font-bold tracking-tight text-slate-900">Barcode</h1>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700 mt-1">Kestrel</p>

@@ -115,7 +115,7 @@ export async function executeSearchBrands(args: {
   if (error) return { error: error.message };
   if (!brands || brands.length === 0) return { brands: [], count: 0 };
 
-  // Attach latest momentum score for each brand
+  // Attach latest momentum score + retail figure for each brand
   const enriched: Array<Record<string, unknown>> = [];
   for (const b of brands) {
     const { data: latestMomentum } = await db
@@ -135,15 +135,16 @@ export async function executeSearchBrands(args: {
     if (args.min_momentum != null && (score == null || score < args.min_momentum)) continue;
     if (args.not_in_retail === true && notInRetail !== true) continue;
 
+    // Return only fields useful for ranking/recommending. Deliberately omit
+    // internal plumbing (handle-resolution state, discovery_source) so the
+    // agent never narrates "handles unresolved" or "nielsen upload" to a user.
     enriched.push({
       id: b.id,
       name: b.name,
       slug: b.slug,
-      tiktokHandle: b.tiktok_handle,
-      instagramHandle: b.instagram_handle,
-      discoverySource: b.discovery_source,
       momentumScore: score,
       notInRetail,
+      recommendedAction: score != null && score >= 70 && notInRetail ? "call_now" : score != null && score >= 50 ? "watch" : "skip",
       notes: b.notes,
     });
   }
