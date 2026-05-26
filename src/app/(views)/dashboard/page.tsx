@@ -14,6 +14,7 @@ interface BrandRow {
   is_monitored: boolean;
   notes: string | null;
   momentumScore: number | null;
+  lane: string | null;
 }
 
 interface SnapshotRow {
@@ -48,8 +49,7 @@ export default function DashboardPage() {
         .from("brands")
         .select("id, name, slug, is_monitored, notes, created_at")
         .eq("is_archived", false)
-        .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(200); // no created_at sort — we re-sort by score below
 
       if (!brands) return;
 
@@ -76,15 +76,21 @@ export default function DashboardPage() {
         is_monitored: b.is_monitored,
         notes: b.notes,
         momentumScore: latestByBrand.get(b.id) ?? null,
+        lane: (b.notes ?? "").includes("Functional Beverages") ? "Bev" : "H&B",
       }));
 
       if (!mounted) return;
       const top = [...enriched]
         .filter((b) => b.momentumScore != null)
         .sort((a, b) => (b.momentumScore ?? 0) - (a.momentumScore ?? 0))
-        .slice(0, 8);
+        .slice(0, 10);
       setTopBrands(top);
-      setRecent(enriched.slice(0, 8));
+      // "Not yet in retail" teaser — shown in a second card as the key insight
+      const recentSorted = [...enriched]
+        .filter((b) => b.momentumScore != null && (b.momentumScore ?? 0) >= 70)
+        .sort((a, b) => (b.momentumScore ?? 0) - (a.momentumScore ?? 0))
+        .slice(10, 18); // next tier after the top 10
+      setRecent(recentSorted);
       setLoading(false);
     })();
 
@@ -129,8 +135,14 @@ export default function DashboardPage() {
               {topBrands.map((b) => (
                 <li key={b.id} className="px-5 py-2.5 flex items-center justify-between hover:bg-slate-50 transition-colors">
                   <Link href={`/brand-card/${b.slug}`} className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">{b.name}</p>
-                    {b.notes && <p className="text-xs text-slate-500 truncate">{b.notes}</p>}
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-slate-900 truncate">{b.name}</p>
+                      {b.lane && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium flex-shrink-0">
+                          {b.lane}
+                        </span>
+                      )}
+                    </div>
                   </Link>
                   <div className="flex-shrink-0 text-right">
                     <p
@@ -152,27 +164,38 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Recent brands */}
+      {/* Next tier brands */}
       <Card>
         <CardHeader>
-          <CardTitle>Recently added brands</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-teal-600" />
+            More high-momentum brands
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-sm text-slate-400">Loading...</p>
           ) : recent.length === 0 ? (
             <p className="text-sm text-slate-500">
-              No brands yet. Run <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">npm run seed</code>{" "}
-              to add starter brands.
+              No brands yet. Upload a Nielsen file or ask Barry to add a brand.
             </p>
           ) : (
             <ul className="divide-y divide-slate-100 -mx-5">
               {recent.map((b) => (
-                <li key={b.id} className="px-5 py-2.5">
-                  <Link href={`/brand-card/${b.slug}`} className="block">
-                    <p className="text-sm font-medium text-slate-900">{b.name}</p>
-                    {b.notes && <p className="text-xs text-slate-500 truncate">{b.notes}</p>}
+                <li key={b.id} className="px-5 py-2.5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                  <Link href={`/brand-card/${b.slug}`} className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-slate-900 truncate">{b.name}</p>
+                      {b.lane && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium flex-shrink-0">
+                          {b.lane}
+                        </span>
+                      )}
+                    </div>
                   </Link>
+                  <p className={`text-lg font-bold tabular-nums flex-shrink-0 ${
+                    (b.momentumScore ?? 0) >= 70 ? "text-emerald-600" : "text-amber-600"
+                  }`}>{b.momentumScore}</p>
                 </li>
               ))}
             </ul>
