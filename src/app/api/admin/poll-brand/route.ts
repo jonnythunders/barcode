@@ -3,26 +3,23 @@
  *
  * Admin endpoint to manually trigger a brand-card poll (single brand or all
  * monitored brands) without running scripts locally. Designed for the
- * Vercel-first workflow where running `npm run poll-once` locally is
- * inconvenient.
+ * Vercel-first workflow.
  *
- * Auth: requires `Authorization: Bearer ${CRON_SECRET}`. Same secret as
- * the weekly-poll cron route — no new env var.
+ * Auth: `Authorization: Bearer ${CRON_SECRET}`.
  *
- * Usage:
- *   curl -H "Authorization: Bearer $CRON_SECRET" \
- *        "https://barcodekestrel.vercel.app/api/admin/poll-brand?slug=liquid-death"
+ * Usage (PowerShell):
+ *   Invoke-WebRequest -Uri "https://barcodekestrel.vercel.app/api/admin/poll-brand?slug=liquid-death" `
+ *     -Headers @{ "Authorization" = "Bearer $env:CRON_SECRET" } |
+ *     Select-Object -ExpandProperty Content
  *
- *   curl -H "Authorization: Bearer $CRON_SECRET" \
- *        "https://barcodekestrel.vercel.app/api/admin/poll-brand?all=true"
+ *   # Limit when polling all (credit-aware smoke test):
+ *   ?all=true&limit=5
  *
- *   # Limit to N brands when polling all (useful for credit-aware smoke tests):
- *   curl -H "Authorization: Bearer $CRON_SECRET" \
- *        "https://barcodekestrel.vercel.app/api/admin/poll-brand?all=true&limit=5"
+ *   # Diagnostic mode — bypasses the fail-safe so you SEE what each fetcher returned,
+ *   # even if SociaVault failed and we would normally fall back to the cached card:
+ *   ?slug=liquid-death&debug=1
  *
- * Returns: JSON with per-brand status, momentum scores, and any errors.
- *
- * NOT exposed in the UI navigation — discoverable only by direct URL.
+ * Returns: JSON with per-brand status, momentum, provenance, and diagnostics.
  */
 import { NextResponse } from "next/server";
 import { verifyCronSecret, getAdminSupabase } from "@/lib/supabase-admin";
@@ -48,6 +45,17 @@ interface BrandResult {
   errors?: Record<string, string>;
   errorMessage?: string;
   durationMs: number;
+  /** Populated when ?debug=1 — recent fetcher_runs rows for this brand,
+   *  showing exactly what SociaVault (and other fetchers) did. */
+  recentFetcherRuns?: {
+    fetcherName: string;
+    status: string;
+    snapshotsWritten: number;
+    errorMessage: string | null;
+    startedAt: string;
+    finishedAt: string | null;
+    metadata: unknown;
+  }[];
 }
 
 interface AdminPollResult {
@@ -75,6 +83,7 @@ export async function GET(request: Request) {
   const slug = url.searchParams.get("slug");
   const all = url.searchParams.get("all") === "true";
   const limit = Number(url.searchParams.get("limit") ?? "0");
+  const debug = url.searchParams.get("debug") === "1";
 
   if (!slug && !all) {
     return NextResponse.json(
@@ -86,7 +95,6 @@ export async function GET(request: Request) {
   const db = getAdminSupabase();
   const startedAt = Date.now();
 
-  // Build the list of brands to poll.
   let brandsQuery = db
     .from("brands")
     .select("id, name, slug")
@@ -109,16 +117,17 @@ export async function GET(request: Request) {
     );
   }
 
-  // Poll serially to keep external rate limits (SociaVault credits) predictable.
+  // Poll serially — keeps SociaVault credit usage predictable.
   const results: BrandResult[] = [];
   let succeeded = 0;
   let failed = 0;
 
   for (const b of brands) {
     const start = Date.now();
+    const pollStartIso = new Date(start - 1000).toISOString(); // small buffer
     try {
       const card = await getBrandCard({ brandName: b.name, forceRefresh: true });
-      results.push({
+      const result: BrandResult = {
         slug: b.slug,
         name: b.name,
         ok: true,
@@ -132,7 +141,30 @@ export async function GET(request: Request) {
         instagramFollowers: card.instagram.followerCount ?? null,
         errors: card.partial ? card.errors : undefined,
         durationMs: Date.now() - start,
-      });
+      };
+
+      // Diagnostic mode: pull the fetcher_runs rows that were just written
+      // during this poll. This shows the SociaVault attempt regardless of
+      // whether the fail-safe returned a cached card on top.
+      if (debug) {
+        const { data: runs } = await db
+          .from("fetcher_runs")
+          .select("fetcher_name, status, snapshots_written, error_message, started_at, finished_at, metadata")
+          .eq("brand_id", b.id)
+          .gte("started_at", pollStartIso)
+          .order("started_at", { ascending: false });
+        result.recentFetcherRuns = (runs ?? []).map((r) => ({
+          fetcherName: r.fetcher_name,
+          status: r.status,
+          snapshotsWritten: r.snapshots_written ?? 0,
+          errorMessage: r.error_message,
+          startedAt: r.started_at,
+          finishedAt: r.finished_at,
+          metadata: r.metadata,
+        }));
+      }
+
+      results.push(result);
       succeeded++;
     } catch (err) {
       failed++;
