@@ -299,6 +299,8 @@ export interface MomentumScoreResult {
   components: Partial<Record<keyof MomentumWeights, number>>;
   notInRetail: boolean;             // bonus signal: present in social/amazon, absent from nielsen
   computedAt: string;
+  /** What the score is actually computed from, for honest disclosure. */
+  basis?: "commerce" | "social_fallback";
 }
 
 // ============================================================================
