@@ -16,7 +16,7 @@
  * The agent's `lookup_brand` tool also calls this directly.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { getServerEnv } from "@/lib/env";
+import { getServerEnv, getFeatureFlags } from "@/lib/env";
 import { getAdminSupabase } from "@/lib/supabase-admin";
 import { nowIso } from "@/lib/utils";
 import type {
@@ -37,6 +37,13 @@ import { fetchInstagram, getInstagramFollowerTrend, type InstagramResult } from 
 import { fetchReddit, fetchRedditCommentSample, type RedditResult } from "@/lib/fetchers/reddit";
 import { analyzeSentiment, type SentimentResult } from "@/lib/sentiment";
 import { computeMomentumScore } from "@/lib/momentum";
+import {
+  fetchSociaVaultTikTok,
+  fetchSociaVaultInstagram,
+  SOCIAVAULT_SOURCE_LABEL,
+  type SociaVaultTikTokResult,
+  type SociaVaultInstagramResult,
+} from "@/lib/fetchers/sociavault";
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -65,10 +72,18 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   // SmartScout x Nielsen analysis). Live fetchers for arbitrary brands require
   // API credentials that aren't configured, so rather than show a broken card
   // full of errors for an untracked name, return a clean "not tracked" card.
+  //
+  // EXCEPTION: when SociaVault is configured AND forceRefresh is true, we
+  // skip the cache short-circuit and run the live pipeline so the seeded
+  // demo brands can be enriched with real social signals. The merge guard
+  // below ensures a partial-failure live fetch can't clobber a good card.
+  const sociaVaultLive = getFeatureFlags().sociaVaultEnabled && opts.forceRefresh === true;
   const tracked = await findTrackedBrand(opts.brandName);
   if (tracked) {
-    const seeded = await readCacheRaw(tracked.id);
-    if (seeded) return seeded;
+    if (!sociaVaultLive) {
+      const seeded = await readCacheRaw(tracked.id);
+      if (seeded) return seeded;
+    }
   } else {
     return notTrackedCard(opts.brandName);
   }
@@ -88,9 +103,17 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   // Demo-seeded brands have curated cards that must never be overwritten by a
   // live fetch (live fetchers have no API credentials in this environment).
   // For these, always return the cached card, ignoring TTL and forceRefresh.
+  //
+  // EXCEPTION: when SociaVault is configured AND forceRefresh is true, we DO
+  // run the live path so the demo brands can be enriched with real social
+  // signals from SociaVault (which doesn't require per-platform OAuth). This
+  // is how `npm run poll` and the weekly-poll cron upgrade demo cards from
+  // "sample" social to "sourced" social once you have a SociaVault key.
   if (await isSeededBrand(brandId)) {
-    const seeded = await readCacheRaw(brandId);
-    if (seeded) return seeded;
+    if (!sociaVaultLive) {
+      const seeded = await readCacheRaw(brandId);
+      if (seeded) return seeded;
+    }
   }
 
   if (!opts.forceRefresh) {
@@ -99,16 +122,25 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   }
 
   const primaryKeyword = opts.brandName;
+  const flags = getFeatureFlags();
 
   // --- Step 3: fan-out fetchers ---
+  // SociaVault is preferred when configured — it covers BOTH TikTok and
+  // Instagram with a single API key and returns sourced (not sample) data.
+  // When absent, fall back to the platform-native fetchers (most of which
+  // need their own OAuth credentials).
   // Each promise is explicitly typed so TypeScript never widens to unknown.
-  const tiktokPromise: Promise<FetcherResult<TikTokResult>> = resolution.tiktokHandle
-    ? fetchTikTok({ brandId, handle: resolution.tiktokHandle, triggerKind: "on_demand" })
-    : Promise.resolve(notFoundResult<TikTokResult>("no tiktok handle resolved"));
+  const tiktokPromise: Promise<FetcherResult<TikTokResult | SociaVaultTikTokResult>> = flags.sociaVaultEnabled && resolution.tiktokHandle
+    ? fetchSociaVaultTikTok({ brandId, handle: resolution.tiktokHandle, triggerKind: "on_demand" })
+    : resolution.tiktokHandle
+      ? fetchTikTok({ brandId, handle: resolution.tiktokHandle, triggerKind: "on_demand" })
+      : Promise.resolve(notFoundResult<TikTokResult>("no tiktok handle resolved"));
 
-  const instagramPromise: Promise<FetcherResult<InstagramResult>> = resolution.instagramHandle
-    ? fetchInstagram({ brandId, handle: resolution.instagramHandle, triggerKind: "on_demand" })
-    : Promise.resolve(notFoundResult<InstagramResult>("no instagram handle resolved"));
+  const instagramPromise: Promise<FetcherResult<InstagramResult | SociaVaultInstagramResult>> = flags.sociaVaultEnabled && resolution.instagramHandle
+    ? fetchSociaVaultInstagram({ brandId, handle: resolution.instagramHandle, triggerKind: "on_demand" })
+    : resolution.instagramHandle
+      ? fetchInstagram({ brandId, handle: resolution.instagramHandle, triggerKind: "on_demand" })
+      : Promise.resolve(notFoundResult<InstagramResult>("no instagram handle resolved"));
 
   const shopifyPromise: Promise<FetcherResult<ShopifyResult>> = resolution.websiteUrl
     ? fetchShopify({ brandId, domain: resolution.websiteUrl, triggerKind: "on_demand" })
@@ -120,8 +152,8 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
     FetcherResult<GoogleTrendsResult>,
     FetcherResult<AmazonResult>,
     FetcherResult<ShopifyResult>,
-    FetcherResult<TikTokResult>,
-    FetcherResult<InstagramResult>,
+    FetcherResult<TikTokResult | SociaVaultTikTokResult>,
+    FetcherResult<InstagramResult | SociaVaultInstagramResult>,
     FetcherResult<RedditResult>,
   ] = await Promise.all([
     fetchGoogleTrends({ brandId, keyword: primaryKeyword, triggerKind: "on_demand" }),
@@ -197,12 +229,36 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   // Guard: don't let a mostly-failed live fetch clobber a good existing card.
   // If most platform fetches failed (e.g. missing API credentials), preserve
   // whatever is already cached rather than overwriting it with errors.
+  //
+  // EXCEPTION: if SociaVault succeeded on either TikTok or Instagram, that's
+  // genuine NEW sourced data we want to keep, even if the other 4 fetchers
+  // failed for lack of OAuth credentials. Merge instead of discard: take the
+  // cached card, swap in the live SociaVault blocks.
   const failedCount = Object.keys(partialFetches).length;
-  if (failedCount >= 4) {
+  const sociaVaultTikTokOk = isSociaVaultTikTok(tiktokR.data) && tiktokR.ok;
+  const sociaVaultInstagramOk = isSociaVaultInstagram(instagramR.data) && instagramR.ok;
+  if (failedCount >= 4 && !sociaVaultTikTokOk && !sociaVaultInstagramOk) {
     const existing = await readCacheRaw(brandId);
     if (existing) {
       console.log(`[brand-card] ${resolution.brandName}: live fetch mostly failed (${failedCount}), keeping cached card`);
       return existing;
+    }
+  } else if (failedCount >= 4 && (sociaVaultTikTokOk || sociaVaultInstagramOk)) {
+    // Merge path: SociaVault succeeded on at least one social platform.
+    // Take the existing cached card and overlay just the SociaVault blocks
+    // so we preserve the curated commerce hero + narrative while upgrading
+    // social to sourced data.
+    const existing = await readCacheRaw(brandId);
+    if (existing) {
+      const merged: BrandCard = {
+        ...existing,
+        ...(sociaVaultTikTokOk ? { tiktok: card.tiktok } : {}),
+        ...(sociaVaultInstagramOk ? { instagram: card.instagram } : {}),
+        generatedAt: nowIso(),
+      };
+      await writeCache(brandId, merged);
+      console.log(`[brand-card] ${resolution.brandName}: merged SociaVault social into cached card (tt=${sociaVaultTikTokOk}, ig=${sociaVaultInstagramOk})`);
+      return merged;
     }
   }
 
@@ -354,8 +410,8 @@ async function getSubredditsForBrand(brandId: string): Promise<string[]> {
 
 interface NarrativeInput {
   brandName: string;
-  tiktok: TikTokResult | null;
-  instagram: InstagramResult | null;
+  tiktok: TikTokResult | SociaVaultTikTokResult | null;
+  instagram: InstagramResult | SociaVaultInstagramResult | null;
   amazon: AmazonResult | null;
   trends: GoogleTrendsResult | null;
   reddit: RedditResult | null;
@@ -438,8 +494,8 @@ function formatNum(n: number): string {
 interface AssembleInput {
   brandId: string;
   resolution: HandleResolution;
-  tiktokR: FetcherResult<TikTokResult>;
-  instagramR: FetcherResult<InstagramResult>;
+  tiktokR: FetcherResult<TikTokResult | SociaVaultTikTokResult>;
+  instagramR: FetcherResult<InstagramResult | SociaVaultInstagramResult>;
   instagramTrend: { date: string; value: number }[];
   amazonR: FetcherResult<AmazonResult>;
   trendsR: FetcherResult<GoogleTrendsResult>;
@@ -448,6 +504,13 @@ interface AssembleInput {
   momentum: { score: number | null; components: unknown; notInRetail: boolean };
   narrative: string | null;
   errors: Record<string, string>;
+}
+
+function isSociaVaultTikTok(r: TikTokResult | SociaVaultTikTokResult | undefined): r is SociaVaultTikTokResult {
+  return !!r && (r as SociaVaultTikTokResult).source === "sociavault";
+}
+function isSociaVaultInstagram(r: InstagramResult | SociaVaultInstagramResult | undefined): r is SociaVaultInstagramResult {
+  return !!r && (r as SociaVaultInstagramResult).source === "sociavault";
 }
 
 function assembleBrandCard(a: AssembleInput): BrandCard {
@@ -460,6 +523,17 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
         : a.momentum.score >= 50
           ? "watch"
           : "skip";
+
+  // Provenance tagging — if the data came from SociaVault, the BrandCard's
+  // PlatformBlock gets `provenance: "sourced"` + sourceLabel so the UI
+  // renders a teal "SociaVault" badge instead of the amber "Preview · sample".
+  const tiktokFromSocia = isSociaVaultTikTok(a.tiktokR.data);
+  const igFromSocia = isSociaVaultInstagram(a.instagramR.data);
+
+  // SociaVault TikTok result doesn't include the ad-presence object (that's
+  // a separate Commercial API). Detect the type and read adSummary only when
+  // it's actually the native fetcher.
+  const tiktokNativeData = !tiktokFromSocia ? (a.tiktokR.data as TikTokResult | undefined) : undefined;
 
   return {
     brand: {
@@ -479,6 +553,8 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
       status: platformStatus(a.tiktokR),
       capturedAt: a.tiktokR.capturedAt,
       error: a.tiktokR.ok ? undefined : a.tiktokR.error,
+      provenance: tiktokFromSocia ? "sourced" : undefined,
+      sourceLabel: tiktokFromSocia ? SOCIAVAULT_SOURCE_LABEL : undefined,
       followerCount: a.tiktokR.data?.followerCount ?? undefined,
       followingCount: a.tiktokR.data?.followingCount ?? undefined,
       likesCount: a.tiktokR.data?.likesCount ?? undefined,
@@ -487,14 +563,18 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
       isVerified: a.tiktokR.data?.isVerified ?? undefined,
       engagementRate: a.tiktokR.data?.engagementRate ?? undefined,
       topVideos: a.tiktokR.data?.topVideos as TikTokVideoSummary[] | undefined,
-      adPresence: (a.tiktokR.data?.adSummary ?? undefined) as TikTokAdSummary | undefined,
+      adPresence: (tiktokNativeData?.adSummary ?? undefined) as TikTokAdSummary | undefined,
     },
     instagram: {
       status: platformStatus(a.instagramR),
       capturedAt: a.instagramR.capturedAt,
       error: a.instagramR.ok ? undefined : a.instagramR.error,
+      provenance: igFromSocia ? "sourced" : undefined,
+      sourceLabel: igFromSocia ? SOCIAVAULT_SOURCE_LABEL : undefined,
       followerCount: a.instagramR.data?.followerCount ?? undefined,
-      postCount: a.instagramR.data?.mediaCount ?? undefined,
+      postCount: igFromSocia
+        ? (a.instagramR.data as SociaVaultInstagramResult).mediaCount ?? undefined
+        : (a.instagramR.data as InstagramResult | undefined)?.mediaCount ?? undefined,
       bio: a.instagramR.data?.bio ?? undefined,
       followerTrend: a.instagramTrend.length > 1 ? a.instagramTrend : undefined,
     },

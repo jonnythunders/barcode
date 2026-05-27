@@ -27,6 +27,25 @@ interface UploadResponse {
   } | null;
 }
 
+interface SmartScoutUploadResponse {
+  uploadId: string;
+  filename: string;
+  rowCount: number;
+  periodLabel: string | null;
+  categoryCount: number;
+  topCategories: { mainCategory: string; primarySubcategory: string; rowCount: number }[];
+  reconcileSummary?: {
+    uploadId: string;
+    brandsAggregated: number;
+    brandsMatched: number;
+    brandsUnmatched: number;
+    rowsTotal: number;
+    rowsMatched: number;
+    snapshotsWritten: number;
+    topUnmatched: { brandName: string; trailing12Months: number; subcategory: string | null }[];
+  } | null;
+}
+
 const FIELD_LABELS: Record<string, string> = {
   brand_col: "Brand",
   category_col: "Category",
@@ -55,6 +74,37 @@ export default function NielsenPage() {
   const [deepDiveResult, setDeepDiveResult] = useState<{ reportId?: string; summary?: Record<string, number> } | null>(null);
   const [recipientEmail, setRecipientEmail] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- SmartScout state ---
+  const [ssFile, setSsFile] = useState<File | null>(null);
+  const [ssUploading, setSsUploading] = useState(false);
+  const [ssResult, setSsResult] = useState<SmartScoutUploadResponse | null>(null);
+  const [ssError, setSsError] = useState<string | null>(null);
+  const ssFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSmartScoutUpload = async () => {
+    if (!ssFile || !token) return;
+    setSsUploading(true);
+    setSsError(null);
+    setSsResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", ssFile);
+      form.append("autoReconcile", "1");
+      const res = await fetch("/api/smartscout/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+      setSsResult(data as SmartScoutUploadResponse);
+    } catch (err) {
+      setSsError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setSsUploading(false);
+    }
+  };
 
   const handleUpload = async () => {
     if (!file || !token) return;
@@ -120,14 +170,88 @@ export default function NielsenPage() {
           <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
             <Check className="w-3 h-3" /> Nielsen retail scan · live
           </span>
-          <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-            SmartScout (Amazon) · wiring in
+          <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+            <Check className="w-3 h-3" /> SmartScout (Amazon) · live
           </span>
           <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
             Exploding Topics · wiring in
           </span>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>SmartScout (Amazon velocity) · monthly refresh</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-500 mb-3">
+            Drop the monthly SmartScout export (.xlsx). We aggregate by brand across subcategories,
+            match against monitored brands, and write fresh Amazon revenue + YoY growth snapshots.
+            Brands above $500k TTM that don&apos;t match the monitored set are queued for review.
+          </p>
+          <div className="flex items-center gap-3">
+            <input
+              ref={ssFileInputRef}
+              type="file"
+              className="hidden"
+              accept=".xlsx,.xls,.xlsm"
+              onChange={(e) => setSsFile(e.target.files?.[0] ?? null)}
+            />
+            <Button onClick={() => ssFileInputRef.current?.click()} variant="outline" className="gap-1.5">
+              <Upload className="w-4 h-4" />
+              Choose SmartScout file
+            </Button>
+            {ssFile && (
+              <span className="text-sm text-slate-700">
+                {ssFile.name} · {(ssFile.size / 1024 / 1024).toFixed(1)} MB
+              </span>
+            )}
+            <div className="flex-1" />
+            <Button onClick={handleSmartScoutUpload} disabled={!ssFile || ssUploading}>
+              {ssUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Upload + reconcile"}
+            </Button>
+          </div>
+          {ssError && (
+            <div className="mt-3 border border-red-200 bg-red-50 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-800">{ssError}</p>
+            </div>
+          )}
+          {ssResult && (
+            <div className="mt-4 space-y-3">
+              <p className="text-xs text-slate-500">
+                {ssResult.rowCount.toLocaleString()} rows across {ssResult.categoryCount} subcategories
+                {ssResult.periodLabel && <> · Period: <span className="font-medium text-slate-700">{ssResult.periodLabel}</span></>}
+              </p>
+              {ssResult.reconcileSummary && (
+                <>
+                  <div className="grid grid-cols-4 gap-3">
+                    <Stat label="Brands matched" value={ssResult.reconcileSummary.brandsMatched} color="text-green-600" />
+                    <Stat label="Unmatched" value={ssResult.reconcileSummary.brandsUnmatched} color="text-amber-600" />
+                    <Stat label="Snapshots written" value={ssResult.reconcileSummary.snapshotsWritten} color="text-teal-600" />
+                    <Stat label="Brands aggregated" value={ssResult.reconcileSummary.brandsAggregated} color="text-slate-500" />
+                  </div>
+                  {ssResult.reconcileSummary.topUnmatched.length > 0 && (
+                    <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-3">
+                      <p className="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-2">
+                        Top unmatched brands by TTM (candidates to add to monitored set)
+                      </p>
+                      <ul className="text-xs text-slate-700 space-y-1">
+                        {ssResult.reconcileSummary.topUnmatched.slice(0, 8).map((u) => (
+                          <li key={u.brandName} className="flex justify-between">
+                            <span>{u.brandName}{u.subcategory ? <span className="text-slate-400"> · {u.subcategory}</span> : null}</span>
+                            <span className="tabular-nums text-slate-600">${(u.trailing12Months / 1_000_000).toFixed(1)}M</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

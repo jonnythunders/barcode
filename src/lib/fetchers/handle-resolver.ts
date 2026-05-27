@@ -192,14 +192,21 @@ export async function resolveBrandHandles(opts: ResolveOptions): Promise<HandleR
   const { brandRow, brandId } = await ensureBrandRow(name, {}, opts.persistToBrandsRow);
   await logResolution(db, name, brandId, {}, "low", { strategy: "deterministic_guess", candidates: guesses });
 
+  // Return the FIRST guess as a low-confidence handle so downstream
+  // fetchers (SociaVault, TikTok native) at least get an attempt. If the
+  // guess is wrong the fetcher 404s and we log it; over time, manual
+  // overrides via `brands.tiktok_handle` / `instagram_handle` correct
+  // these (the resolver short-circuits on populated handles in strategy 1).
+  const bestGuess = guesses[0] ?? null;
+
   return {
     brandId,
     brandName: brandRow?.name ?? name,
-    tiktokHandle: null,
-    instagramHandle: null,
+    tiktokHandle: bestGuess,
+    instagramHandle: bestGuess,
     amazonBrand: null,
     websiteUrl: null,
-    confidence: "unresolved",
+    confidence: bestGuess ? "low" : "unresolved",
     candidates: { tiktok: guesses, instagram: guesses },
     resolutionLog: log,
   };

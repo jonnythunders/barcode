@@ -71,6 +71,7 @@ export interface ServerEnv {
   redditUserAgent: string;
   smartscoutApiKey: string | undefined;
   explodingTopicsApiKey: string | undefined;
+  sociavaultApiKey: string | undefined;
   openaiApiKey: string | undefined;
 }
 
@@ -100,6 +101,7 @@ export function getServerEnv(): ServerEnv {
     redditUserAgent: optionalEnv("REDDIT_USER_AGENT") || "barcode-brand-intel/0.1.0",
     smartscoutApiKey: optionalEnv("SMARTSCOUT_API_KEY"),
     explodingTopicsApiKey: optionalEnv("EXPLODING_TOPICS_API_KEY"),
+    sociavaultApiKey: optionalEnv("SOCIAVAULT_API_KEY"),
     openaiApiKey: optionalEnv("OPENAI_API_KEY"),
   };
   return _serverEnvCache;
@@ -117,6 +119,7 @@ export interface FeatureFlags {
   redditEnabled: boolean;
   smartscoutEnabled: boolean;
   explodingTopicsEnabled: boolean;
+  sociaVaultEnabled: boolean;
   emailEnabled: boolean;
 }
 
@@ -128,6 +131,7 @@ export function getFeatureFlags(env: ServerEnv = getServerEnv()): FeatureFlags {
     redditEnabled: !!(env.redditClientId && env.redditClientSecret),
     smartscoutEnabled: !!env.smartscoutApiKey,
     explodingTopicsEnabled: !!env.explodingTopicsApiKey,
+    sociaVaultEnabled: !!env.sociavaultApiKey,
     emailEnabled: !!env.resendApiKey,
   };
 }
