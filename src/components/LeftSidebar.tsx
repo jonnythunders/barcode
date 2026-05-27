@@ -13,7 +13,7 @@ const NAV: NavItem[] = [
   { path: "/dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
   { path: "/brand-card", label: "Brand Card", icon: <Search className="w-4 h-4" /> },
   { path: "/discovery", label: "Discovery", icon: <Sparkles className="w-4 h-4" /> },
-  { path: "/nielsen", label: "Nielsen", icon: <Upload className="w-4 h-4" /> },
+  { path: "/nielsen", label: "Data", icon: <Upload className="w-4 h-4" /> },
   { path: "/reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
   { path: "/categories", label: "Categories", icon: <Tag className="w-4 h-4" /> },
 ];

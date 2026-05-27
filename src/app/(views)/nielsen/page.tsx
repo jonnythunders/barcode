@@ -107,14 +107,26 @@ export default function NielsenPage() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-4">
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">Nielsen / IRI / Circana</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">Data</p>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 mt-1">
-          Upload retail scan data
+          Data uploads
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          CSV, TSV, or Excel. We auto-detect the column mapping and match brand names against your
-          monitored brands. Anything ambiguous lands in the reconciliation queue.
+          Three feeds power the engine. Retail scan data (Nielsen / IRI / Circana) is live below —
+          drop a file and we auto-detect the column mapping and match brands against the ones you
+          monitor. SmartScout (Amazon) and Exploding Topics ingestion are being wired in next.
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+            <Check className="w-3 h-3" /> Nielsen retail scan · live
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+            SmartScout (Amazon) · wiring in
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+            Exploding Topics · wiring in
+          </span>
+        </div>
       </div>
 
       <Card>

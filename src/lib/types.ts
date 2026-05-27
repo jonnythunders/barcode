@@ -193,10 +193,28 @@ export interface BrandCard {
     negativeThemes?: string[];
     sampleSize?: number;
   };
+  /**
+   * Real commerce signals sourced from SmartScout (Amazon) and Nielsen
+   * (retail scan) data. These are the figures we can stand behind today —
+   * deliberately distinct from the social/sentiment platform blocks, which
+   * are sample data in the preview build. Rendered as the card's hero.
+   */
+  commerce?: {
+    amazonAnnualSales?: number;
+    amazonYoyGrowthPct?: number;
+    amazonMonthlyUnits?: number;
+    retailAnnualSales?: number;
+    retailYoyGrowthPct?: number | null;
+    retailPresence?: "None" | "Minimal" | "Emerging" | "Established";
+    /** e.g. "SmartScout × Nielsen xAOC · Apr 2026" */
+    sourceLabel?: string;
+  };
   momentumScore: {
     score: number | null;           // 0–100, null if insufficient data
     breakdown?: Record<string, number>;
     asOf: string;                   // ISO
+    /** What the score is actually computed from, for honest disclosure. */
+    basis?: "commerce" | "commerce_plus_social";
   };
   narrative: string | null;         // 2–3 sentence AI summary (Claude)
   recommendedAction: "call_now" | "watch" | "skip" | null;
@@ -209,6 +227,16 @@ export interface PlatformBlock {
   status: "ok" | "not_configured" | "error" | "not_found" | "skipped";
   capturedAt?: string;
   error?: string;
+  /**
+   * Data provenance, for honest labeling in the UI.
+   *   "sourced" — derived from a real connected data source (SmartScout, Nielsen)
+   *   "sample"  — representative sample data shown in preview; NOT yet a live feed
+   * When omitted, the UI treats the block as "sample" (fail-safe: never imply
+   * a number is real unless we explicitly say so).
+   */
+  provenance?: "sourced" | "sample";
+  /** Short source label shown when provenance==="sourced", e.g. "SmartScout". */
+  sourceLabel?: string;
 }
 
 export interface TikTokVideoSummary {

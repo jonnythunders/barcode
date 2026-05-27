@@ -52,6 +52,16 @@ export function BrandCard({ card }: { card: BrandCardData }) {
 
   return (
     <div className="space-y-4">
+      {/* Preview-build disclosure — sets expectations before any number is read */}
+      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+        <p className="text-sm text-amber-900">
+          <span className="font-semibold">Preview build.</span> Revenue, retail, and growth figures
+          are derived from real SmartScout and Nielsen data. Social and sentiment panels show{" "}
+          <span className="font-semibold">sample data</span> to illustrate the layer being connected
+          next — treat specific social numbers as placeholders, not live metrics.
+        </p>
+      </div>
+
       {/* Header */}
       <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="bc-rule" aria-hidden="true" />
@@ -90,6 +100,9 @@ export function BrandCard({ card }: { card: BrandCardData }) {
           </div>
         </div>
       </div>
+
+      {/* Commerce hero — the real, sourced numbers we stand behind */}
+      {card.commerce && <CommerceHero c={card.commerce} />}
 
       {/* Narrative */}
       {card.narrative && (
@@ -229,11 +242,78 @@ export function BrandCard({ card }: { card: BrandCardData }) {
         </div>
       )}
 
-      {/* Provenance footnote */}
+      {/* Provenance footnote — reinforces the banner */}
       <p className="text-[11px] text-slate-400 px-1 pt-1">
-        Amazon &amp; retail figures derived from Amazon and Nielsen scan data. Social and sentiment
-        signals are representative sample data for this preview.
+        <span className="text-teal-700">Commerce</span> figures (Amazon &amp; retail) are sourced from
+        SmartScout and Nielsen scan data. <span className="text-amber-600">Sample</span> panels
+        (TikTok, Instagram, Google Trends, Reddit, sentiment) are representative placeholders shown to
+        illustrate the signal layer being connected next.
       </p>
+    </div>
+  );
+}
+
+function CommerceHero({ c }: { c: NonNullable<BrandCardData["commerce"]> }) {
+  const fmtUsd = (n?: number) =>
+    n == null
+      ? "—"
+      : n >= 1_000_000
+        ? "$" + (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M"
+        : n >= 1_000
+          ? "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K"
+          : "$" + Math.round(n);
+  const inRetail = (c.retailAnnualSales ?? 0) > 0;
+  return (
+    <div className="rounded-2xl border border-teal-200 bg-white overflow-hidden">
+      <div className="px-5 py-2.5 border-b border-teal-100 bg-teal-50/60 flex items-center justify-between">
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-700">
+          <Check className="w-3 h-3" />
+          Commerce · sourced
+        </span>
+        {c.sourceLabel && <span className="text-[10px] text-teal-700/70">{c.sourceLabel}</span>}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-slate-100">
+        <Metric
+          label="Amazon sales (TTM)"
+          value={fmtUsd(c.amazonAnnualSales)}
+          sub={c.amazonYoyGrowthPct != null ? `${c.amazonYoyGrowthPct >= 0 ? "+" : ""}${c.amazonYoyGrowthPct.toFixed(0)}% YoY` : undefined}
+          subUp={(c.amazonYoyGrowthPct ?? 0) >= 0}
+        />
+        <Metric
+          label="Amazon units / mo"
+          value={c.amazonMonthlyUnits != null ? formatCompactNumber(c.amazonMonthlyUnits) : "—"}
+        />
+        <Metric
+          label="Retail sales (measured)"
+          value={inRetail ? fmtUsd(c.retailAnnualSales) : "Not in retail"}
+          sub={inRetail && c.retailYoyGrowthPct != null ? `${c.retailYoyGrowthPct >= 0 ? "+" : ""}${c.retailYoyGrowthPct.toFixed(0)}% YoY` : undefined}
+          subUp={(c.retailYoyGrowthPct ?? 0) >= 0}
+          highlight={!inRetail}
+        />
+        <Metric label="Retail presence" value={c.retailPresence ?? "—"} />
+      </div>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  sub,
+  subUp,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  subUp?: boolean;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="px-4 py-3">
+      <p className="text-[10px] uppercase tracking-widest text-slate-400">{label}</p>
+      <p className={`text-lg font-semibold tabular-nums mt-0.5 ${highlight ? "text-emerald-600" : "text-slate-900"}`}>{value}</p>
+      {sub && <p className={`text-xs mt-0.5 ${subUp ? "text-emerald-600" : "text-red-600"}`}>{sub}</p>}
     </div>
   );
 }
@@ -257,8 +337,25 @@ function PlatformSection({
   trend?: { date: string; value: number }[];
   children?: React.ReactNode;
 }) {
+  const isSample = block.status === "ok" && block.provenance !== "sourced";
   const statusBadge = (() => {
-    if (block.status === "ok") return null;
+    if (block.status === "ok") {
+      if (block.provenance === "sourced") {
+        return (
+          <span className="text-[10px] uppercase tracking-widest text-teal-700 flex items-center gap-1">
+            <Check className="w-3 h-3" />
+            {block.sourceLabel ?? "Sourced"}
+          </span>
+        );
+      }
+      // Any "ok" block without explicit sourced provenance is labeled sample,
+      // so we never imply a number is live data.
+      return (
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-600">
+          Preview · sample
+        </span>
+      );
+    }
     if (block.status === "not_configured")
       return <span className="text-[10px] uppercase tracking-widest text-slate-400">Not configured</span>;
     if (block.status === "not_found")
@@ -276,7 +373,7 @@ function PlatformSection({
   const dim = block.status !== "ok";
 
   return (
-    <div className={`border border-slate-200 rounded-xl bg-white ${dim ? "opacity-70" : ""}`}>
+    <div className={`border rounded-xl ${isSample ? "border-amber-200 bg-amber-50/30" : "border-slate-200 bg-white"} ${dim ? "opacity-70" : ""}`}>
       <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-slate-400">{icon}</span>
@@ -287,12 +384,7 @@ function PlatformSection({
             </a>
           ) : null}
         </div>
-        {statusBadge ?? (
-          <span className="text-[10px] uppercase tracking-widest text-green-600 flex items-center gap-1">
-            <Check className="w-3 h-3" />
-            OK
-          </span>
-        )}
+        {statusBadge}
       </div>
       <div className="px-4 py-3">
         {block.status === "ok" ? (

@@ -54,6 +54,12 @@ function compact(n: number): string {
   return String(Math.round(n));
 }
 
+// Currency form of compact(), e.g. 49265650 -> "$49.3M". Kept separate so
+// narrative templates never need a literal "$" adjacent to an interpolation.
+function usd(n: number): string {
+  return "$" + compact(n);
+}
+
 function isoDaysAgo(d: number): string {
   return new Date(Date.now() - d * 86400_000).toISOString().replace(/\.\d{3}Z$/, ".000Z");
 }
@@ -130,15 +136,15 @@ function buildCard(r: SeedRow, brandId: string) {
 
   let narrative: string;
   if (action === "call_now") {
-    narrative = `${b} is a high-priority prospect: $${compact(r.amazon_annual_sales)} in trailing Amazon sales, ` +
-      `up ${amzGrowth.toFixed(0)}% YoY, with ${compact(tt)} TikTok followers and ${compact(ig)} on Instagram — yet ` +
-      `effectively no measured retail footprint. Strong DTC momentum with clear shelf-ready upside.`;
+    narrative = `${b} is a high-priority prospect: ${usd(r.amazon_annual_sales)} in trailing Amazon sales, ` +
+      `up ${amzGrowth.toFixed(0)}% YoY, with effectively no measured retail footprint. ` +
+      `Strong online momentum with clear shelf-ready upside.`;
   } else if (action === "watch") {
     narrative = retail > 0
-      ? `${b} shows solid momentum ($${compact(r.amazon_annual_sales)} Amazon, ${amzGrowth >= 0 ? "+" : ""}${amzGrowth.toFixed(0)}% YoY) and has begun building retail presence ($${compact(retail)} measured). Worth tracking as distribution expands.`
-      : `${b} posts $${compact(r.amazon_annual_sales)} on Amazon (${amzGrowth >= 0 ? "+" : ""}${amzGrowth.toFixed(0)}% YoY) with ${compact(tt)} TikTok followers, but recent signals are mixed. Monitor before prioritizing outreach.`;
+      ? `${b} shows solid momentum (${usd(r.amazon_annual_sales)} Amazon, ${amzGrowth >= 0 ? "+" : ""}${amzGrowth.toFixed(0)}% YoY) and has begun building retail presence (${usd(retail)} measured). Worth tracking as distribution expands.`
+      : `${b} posts ${usd(r.amazon_annual_sales)} on Amazon (${amzGrowth >= 0 ? "+" : ""}${amzGrowth.toFixed(0)}% YoY), but recent signals are mixed. Monitor before prioritizing outreach.`;
   } else {
-    narrative = `${b} is well-established in retail ($${compact(retail)} measured sales) with mature, slow-growth dynamics. ` +
+    narrative = `${b} is well-established in retail (${usd(retail)} measured sales) with mature, slow-growth dynamics. ` +
       `Limited upside for new distribution — low priority for outreach.`;
   }
 
@@ -162,7 +168,7 @@ function buildCard(r: SeedRow, brandId: string) {
       websiteUrl: `https://${handle}.com`, resolutionConfidence: "high",
     },
     tiktok: {
-      status: "ok", capturedAt: NOW, followerCount: tt,
+      status: "ok", capturedAt: NOW, provenance: "sample", followerCount: tt,
       followingCount: Math.floor(50 + 200 * rseed(b, "fg")),
       likesCount: Math.floor(tt * (8 + 12 * rseed(b, "lk"))),
       videoCount: Math.floor(80 + 600 * rseed(b, "vc")),
@@ -171,29 +177,37 @@ function buildCard(r: SeedRow, brandId: string) {
       adPresence: { hasActiveAds: score >= 60, estimatedReach: score >= 70 ? "100K–500K" : "10K–50K", adCount: Math.floor(1 + 8 * rseed(b, "ad")) },
     },
     instagram: {
-      status: "ok", capturedAt: NOW, followerCount: ig,
+      status: "ok", capturedAt: NOW, provenance: "sample", followerCount: ig,
       postCount: Math.floor(200 + 1500 * rseed(b, "pc")),
       bio: `${b} — as seen on Amazon & TikTok`, followerTrend: igTrend,
     },
     amazon: {
-      status: "ok", capturedAt: NOW, starRating: stars, reviewCount: reviews,
+      status: "ok", capturedAt: NOW, provenance: "sample", starRating: stars, reviewCount: reviews,
       bsrRank: bsr, bsrCategory: r.department, boughtPastMonth: bought,
       productUrl: `https://www.amazon.com/s?k=${encodeURIComponent(b)}`,
     },
-    googleTrends: { status: "ok", capturedAt: NOW, searchVolumeTrend: gseries, yoyChangePct: gtYoy },
+    googleTrends: { status: "ok", capturedAt: NOW, provenance: "sample", searchVolumeTrend: gseries, yoyChangePct: gtYoy },
     reddit: {
-      status: "ok", capturedAt: NOW, mentionCount: mentions, velocity,
-      topThreads: [
-        { title: `Has anyone tried ${b}? Worth it?`, subreddit: "SkincareAddiction", upvotes: Math.floor(20 + 400 * rseed(b, "up")), commentCount: Math.floor(10 + 150 * rseed(b, "cc")), url: "https://reddit.com/", postedAt: isoDaysAgo(12) },
-        { title: `${b} review after 3 months`, subreddit: "supplements", upvotes: Math.floor(15 + 300 * rseed(b, "up2")), commentCount: Math.floor(8 + 90 * rseed(b, "cc2")), url: "https://reddit.com/", postedAt: isoDaysAgo(25) },
-      ],
+      status: "ok", capturedAt: NOW, provenance: "sample", mentionCount: mentions, velocity,
+      // Thread-level data intentionally omitted in preview: we do not ship
+      // fabricated links. Real threads populate once the Reddit API is wired.
+      topThreads: [],
     },
     sentiment: {
-      status: "ok", capturedAt: NOW, overallScore: sentScore,
+      status: "ok", capturedAt: NOW, provenance: "sample", overallScore: sentScore,
       positiveThemes: posThemes, negativeThemes: negThemes,
       sampleSize: Math.floor(30 + 120 * rseed(b, "ss")),
     },
-    momentumScore: { score, breakdown, asOf: NOW },
+    commerce: {
+      amazonAnnualSales: r.amazon_annual_sales,
+      amazonYoyGrowthPct: r.amazon_yoy_growth_pct,
+      amazonMonthlyUnits: r.amazon_monthly_units,
+      retailAnnualSales: r.retail_annual_sales,
+      retailYoyGrowthPct: r.retail_yoy_growth_pct,
+      retailPresence: r.retail_presence,
+      sourceLabel: "SmartScout × Nielsen xAOC · Apr 2026",
+    },
+    momentumScore: { score, breakdown, asOf: NOW, basis: "commerce" },
     narrative,
     recommendedAction: action,
     generatedAt: NOW,
