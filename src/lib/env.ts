@@ -104,7 +104,6 @@ export function getServerEnv(): ServerEnv {
     sociavaultApiKey: optionalEnv("SOCIAVAULT_API_KEY"),
     openaiApiKey: optionalEnv("OPENAI_API_KEY"),
   };
-  return _serverEnvCache;
 }
 
 /**
