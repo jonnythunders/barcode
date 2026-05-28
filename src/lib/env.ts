@@ -45,8 +45,6 @@ export const publicEnv = {
  * Use `getServerEnv()` inside route handlers / server components to avoid
  * pulling secrets into client bundles even by accident.
  */
-let _serverEnvCache: ServerEnv | null = null;
-
 export interface ServerEnv {
   // Core (required)
   supabaseUrl: string;
@@ -79,9 +77,11 @@ export function getServerEnv(): ServerEnv {
   if (typeof window !== "undefined") {
     throw new Error("[barcode] getServerEnv() called from the browser. This must run server-side only.");
   }
-  if (_serverEnvCache) return _serverEnvCache;
-
-  _serverEnvCache = {
+  // NOTE: deliberately NOT caching in module-level memory. Vercel serverless
+  // functions are short-lived so there's no meaningful perf win, and a
+  // module-level cache can persist a stale value (e.g. env var added after
+  // the first cold-start) across requests within the same execution context.
+  return {
     supabaseUrl: requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
     supabaseServiceRoleKey: requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
     anthropicApiKey: requireEnv("ANTHROPIC_API_KEY"),

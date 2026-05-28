@@ -1,29 +1,28 @@
 /**
  * /api/admin/poll-brand
  *
- * Admin endpoint to manually trigger a brand-card poll (single brand or all
- * monitored brands) without running scripts locally. Designed for the
- * Vercel-first workflow.
+ * Admin endpoint to manually trigger a brand-card poll without running
+ * scripts locally. Designed for the Vercel-first workflow.
  *
  * Auth: `Authorization: Bearer ${CRON_SECRET}`.
  *
  * Usage (PowerShell):
- *   Invoke-WebRequest -Uri "https://barcodekestrel.vercel.app/api/admin/poll-brand?slug=liquid-death" `
- *     -Headers @{ "Authorization" = "Bearer $env:CRON_SECRET" } |
- *     Select-Object -ExpandProperty Content
+ *   (Invoke-WebRequest -Uri "https://barcodekestrel.vercel.app/api/admin/poll-brand?slug=liquid-death" `
+ *     -Headers @{"Authorization"="Bearer $CRON_SECRET"}).Content
  *
- *   # Limit when polling all (credit-aware smoke test):
- *   ?all=true&limit=5
+ *   # Check env / feature-flag config without polling any brand:
+ *   ?config=1
  *
- *   # Diagnostic mode — bypasses the fail-safe so you SEE what each fetcher returned,
- *   # even if SociaVault failed and we would normally fall back to the cached card:
+ *   # Debug mode — includes recentFetcherRuns per brand:
  *   ?slug=liquid-death&debug=1
  *
- * Returns: JSON with per-brand status, momentum, provenance, and diagnostics.
+ *   # Poll up to N monitored brands:
+ *   ?all=true&limit=5
  */
 import { NextResponse } from "next/server";
 import { verifyCronSecret, getAdminSupabase } from "@/lib/supabase-admin";
 import { getBrandCard } from "@/lib/brand-card";
+import { getFeatureFlags, getServerEnv } from "@/lib/env";
 import { nowIso } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -45,8 +44,6 @@ interface BrandResult {
   errors?: Record<string, string>;
   errorMessage?: string;
   durationMs: number;
-  /** Populated when ?debug=1 — recent fetcher_runs rows for this brand,
-   *  showing exactly what SociaVault (and other fetchers) did. */
   recentFetcherRuns?: {
     fetcherName: string;
     status: string;
@@ -56,17 +53,6 @@ interface BrandResult {
     finishedAt: string | null;
     metadata: unknown;
   }[];
-}
-
-interface AdminPollResult {
-  ok: boolean;
-  startedAt: string;
-  finishedAt: string;
-  brandsAttempted: number;
-  brandsSucceeded: number;
-  brandsFailed: number;
-  results: BrandResult[];
-  totalDurationMs: number;
 }
 
 export async function GET(request: Request) {
@@ -84,10 +70,29 @@ export async function GET(request: Request) {
   const all = url.searchParams.get("all") === "true";
   const limit = Number(url.searchParams.get("limit") ?? "0");
   const debug = url.searchParams.get("debug") === "1";
+  const configCheck = url.searchParams.get("config") === "1";
+
+  // ---- Config / env-var diagnostic mode ----
+  // Returns what the runtime actually sees — without exposing key values.
+  if (configCheck) {
+    const env = getServerEnv();
+    const flags = getFeatureFlags();
+    return NextResponse.json({
+      runtimeEnv: {
+        SOCIAVAULT_API_KEY: env.sociavaultApiKey
+          ? `set (${env.sociavaultApiKey.length} chars, starts "${env.sociavaultApiKey.slice(0, 4)}...")`
+          : "NOT SET",
+        CRON_SECRET: env.cronSecret ? "set" : "NOT SET",
+        OPENAI_API_KEY: env.openaiApiKey ? "set" : "NOT SET",
+        RESEND_API_KEY: env.resendApiKey ? "set" : "NOT SET",
+      },
+      featureFlags: flags,
+    });
+  }
 
   if (!slug && !all) {
     return NextResponse.json(
-      { error: "Must specify either ?slug=<brand-slug> or ?all=true" },
+      { error: "Must specify ?slug=<slug>, ?all=true, or ?config=1" },
       { status: 400 }
     );
   }
@@ -100,12 +105,9 @@ export async function GET(request: Request) {
     .select("id, name, slug")
     .eq("is_monitored", true)
     .eq("is_archived", false);
-  if (slug) {
-    brandsQuery = brandsQuery.eq("slug", slug);
-  }
-  if (limit > 0) {
-    brandsQuery = brandsQuery.limit(limit);
-  }
+  if (slug) brandsQuery = brandsQuery.eq("slug", slug);
+  if (limit > 0) brandsQuery = brandsQuery.limit(limit);
+
   const { data: brands, error } = await brandsQuery;
   if (error) {
     return NextResponse.json({ error: `Brand query failed: ${error.message}` }, { status: 500 });
@@ -117,14 +119,13 @@ export async function GET(request: Request) {
     );
   }
 
-  // Poll serially — keeps SociaVault credit usage predictable.
   const results: BrandResult[] = [];
   let succeeded = 0;
   let failed = 0;
 
   for (const b of brands) {
     const start = Date.now();
-    const pollStartIso = new Date(start - 1000).toISOString(); // small buffer
+    const pollStartIso = new Date(start - 1000).toISOString();
     try {
       const card = await getBrandCard({ brandName: b.name, forceRefresh: true });
       const result: BrandResult = {
@@ -143,9 +144,6 @@ export async function GET(request: Request) {
         durationMs: Date.now() - start,
       };
 
-      // Diagnostic mode: pull the fetcher_runs rows that were just written
-      // during this poll. This shows the SociaVault attempt regardless of
-      // whether the fail-safe returned a cached card on top.
       if (debug) {
         const { data: runs } = await db
           .from("fetcher_runs")
@@ -180,7 +178,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const result: AdminPollResult = {
+  return NextResponse.json({
     ok: true,
     startedAt: new Date(startedAt).toISOString(),
     finishedAt: nowIso(),
@@ -189,7 +187,5 @@ export async function GET(request: Request) {
     brandsFailed: failed,
     results,
     totalDurationMs: Date.now() - startedAt,
-  };
-
-  return NextResponse.json(result);
+  });
 }
