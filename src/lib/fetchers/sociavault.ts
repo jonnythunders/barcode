@@ -357,35 +357,55 @@ interface InstagramProfileRaw {
 }
 
 function parseInstagramProfile(raw: InstagramProfileRaw, handle: string): Omit<SociaVaultInstagramResult, "source" | "capturedAt"> {
-  const u = raw.user ?? {};
-  // SociaVault returns Instagram follower counts under several different
-  // field names depending on the scraping method used internally.
-  // Check every known variant so we never return null when the data is there.
+  // SociaVault double-wraps the Instagram response. sociaVaultGet() unwraps
+  // the outer body.data envelope, but the Instagram endpoint returns:
+  //   { data: { user: { follower_count, ... } }, status: "ok", success: true }
+  // So the actual profile lives at raw.data.user, not raw directly.
+  // We try the nested path first, then fall back to flat paths for resilience.
+  const rawAny = raw as unknown as Record<string, unknown>;
+  const nested = rawAny["data"] as Record<string, unknown> | undefined;
+  const u = (nested?.["user"] ?? raw.user ?? {}) as Record<string, unknown>;
+
   const followerCount =
+    (u["follower_count"] as number | undefined) ??
+    (u["edge_followed_by"] as { count?: number } | undefined)?.count ??
     raw.follower_count ??
-    (raw as unknown as Record<string, number>).followers ??
-    (raw as unknown as Record<string, number>).followers_count ??
-    (raw as unknown as Record<string, number>).followed_by_count ??
-    u.edge_followed_by?.count ??
+    (rawAny["followers"] as number | undefined) ??
+    (rawAny["follower_count"] as number | undefined) ??
     null;
+
   const followingCount =
+    (u["following_count"] as number | undefined) ??
+    (u["edge_follow"] as { count?: number } | undefined)?.count ??
     raw.following_count ??
-    (raw as unknown as Record<string, number>).following ??
-    u.edge_follow?.count ??
+    (rawAny["following"] as number | undefined) ??
     null;
+
   const mediaCount =
+    (u["media_count"] as number | undefined) ??
+    (u["edge_owner_to_timeline_media"] as { count?: number } | undefined)?.count ??
     raw.media_count ??
-    (raw as unknown as Record<string, number>).posts ??
-    (raw as unknown as Record<string, number>).post_count ??
-    u.edge_owner_to_timeline_media?.count ??
+    (rawAny["post_count"] as number | undefined) ??
     null;
+
+  const bio =
+    (u["biography"] as string | undefined) ??
+    (u["bio"] as string | undefined) ??
+    raw.biography ??
+    null;
+
+  const isVerified =
+    (u["is_verified"] as boolean | undefined) ??
+    raw.is_verified ??
+    null;
+
   return {
     handle,
     followerCount: followerCount != null ? Number(followerCount) : null,
     followingCount: followingCount != null ? Number(followingCount) : null,
     mediaCount: mediaCount != null ? Number(mediaCount) : null,
-    bio: raw.biography ?? u.biography ?? null,
-    isVerified: raw.is_verified ?? u.is_verified ?? null,
+    bio: bio ?? null,
+    isVerified: isVerified ?? null,
   };
 }
 
