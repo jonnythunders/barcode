@@ -79,6 +79,8 @@ export async function GET(request: Request) {
     const env = getServerEnv();
     const flags = getFeatureFlags();
     return NextResponse.json({
+      deployedAt: new Date().toISOString(),
+      codeVersion: "2026-05-28-instagram-debug",
       runtimeEnv: {
         SOCIAVAULT_API_KEY: env.sociavaultApiKey
           ? `set (${env.sociavaultApiKey.length} chars, starts "${env.sociavaultApiKey.slice(0, 4)}...")`

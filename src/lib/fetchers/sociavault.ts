@@ -415,6 +415,25 @@ export async function fetchSociaVaultInstagram(opts: SociaVaultOptions): Promise
       }
       const profile = parseInstagramProfile(profileRaw, handle);
 
+      // Always write a debug snapshot of the raw response shape so we can
+      // diagnose field-name mismatches in Supabase without guessing.
+      // Query: SELECT value_json FROM snapshots WHERE platform='instagram'
+      //   AND metric='debug_raw_shape' ORDER BY captured_at DESC LIMIT 1;
+      {
+        const rawShape: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(profileRaw as object)) {
+          rawShape[k] = typeof v === "object" && v !== null
+            ? Array.isArray(v) ? `[array len=${v.length}]` : `{keys:${Object.keys(v as object).join(",")}}`
+            : v;
+        }
+        rawShape["__parsed_followerCount"] = profile.followerCount;
+        await writeSnapshot({
+          brandId: opts.brandId, platform: "instagram", metric: "debug_raw_shape",
+          valueJson: rawShape, fetcherRunId: ctx.runId,
+        });
+        ctx.snapshotsWritten++;
+      }
+
       const baseJson = { source: "sociavault" as const };
       const snaps: Promise<void>[] = [];
 
