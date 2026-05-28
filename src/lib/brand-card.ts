@@ -196,6 +196,13 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   // --- Step 6: IG trend line ---
   const igTrend = await getInstagramFollowerTrend(brandId, 90);
 
+  // --- Step 6b: commerce block from snapshots ---
+  // Always read from the snapshots table so the Commerce Hero survives a live
+  // poll. seed-cards.ts wrote these when it seeded the demo; SmartScout uploads
+  // refresh them monthly. Without this the assembled card has no commerce block
+  // because live fetchers don't scrape SmartScout/Nielsen.
+  const commerceBlock = await readCommerceBlock(brandId);
+
   // --- Step 7: narrative ---
   const partialFetches = collectErrors({ trendsR, amazonR, shopifyR, tiktokR, instagramR, redditR, sentimentR });
   const narrative = await generateNarrative({
@@ -214,6 +221,7 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   const card: BrandCard = assembleBrandCard({
     brandId,
     resolution,
+    commerceBlock,
     tiktokR,
     instagramR,
     instagramTrend: igTrend,
@@ -237,17 +245,19 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   const failedCount = Object.keys(partialFetches).length;
   const sociaVaultTikTokOk = isSociaVaultTikTok(tiktokR.data) && tiktokR.ok;
   const sociaVaultInstagramOk = isSociaVaultInstagram(instagramR.data) && instagramR.ok;
-  if (failedCount >= 4 && !sociaVaultTikTokOk && !sociaVaultInstagramOk) {
+  // Threshold = 2: Amazon + Reddit always fail without their credentials, so
+  // in normal operation failedCount >= 2. When SociaVault succeeded we merge
+  // the live social blocks into the existing cached card, preserving the
+  // commerce hero and narrative that live fetchers can't regenerate.
+  if (failedCount >= 2 && !sociaVaultTikTokOk && !sociaVaultInstagramOk) {
     const existing = await readCacheRaw(brandId);
     if (existing) {
       console.log(`[brand-card] ${resolution.brandName}: live fetch mostly failed (${failedCount}), keeping cached card`);
       return existing;
     }
-  } else if (failedCount >= 4 && (sociaVaultTikTokOk || sociaVaultInstagramOk)) {
-    // Merge path: SociaVault succeeded on at least one social platform.
-    // Take the existing cached card and overlay just the SociaVault blocks
-    // so we preserve the curated commerce hero + narrative while upgrading
-    // social to sourced data.
+  } else if (failedCount >= 2 && (sociaVaultTikTokOk || sociaVaultInstagramOk)) {
+    // Merge path: SociaVault succeeded — overlay the live social blocks onto
+    // the existing cached card so the commerce hero + narrative are preserved.
     const existing = await readCacheRaw(brandId);
     if (existing) {
       const merged: BrandCard = {
@@ -265,6 +275,52 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   await writeCache(brandId, card);
   console.log(`[brand-card] ${resolution.brandName} assembled in ${Date.now() - startedAt}ms (partial=${card.partial})`);
   return card;
+}
+
+// =========================================================================
+// Commerce block reader
+// =========================================================================
+
+/**
+ * Read the latest commerce signals from the snapshots table.
+ * These are written by seed-cards.ts (demo seed) and by SmartScout uploads.
+ * Populating this here ensures the Commerce Hero survives a live poll — the
+ * live path through assembleBrandCard has no other way to get these numbers.
+ */
+async function readCommerceBlock(brandId: string): Promise<BrandCard["commerce"] | undefined> {
+  const db = getAdminSupabase();
+  const snap = async (platform: string, metric: string): Promise<number | null> => {
+    const { data } = await db
+      .from("snapshots")
+      .select("value_numeric")
+      .eq("brand_id", brandId)
+      .eq("platform", platform)
+      .eq("metric", metric)
+      .order("captured_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.value_numeric ?? null;
+  };
+  const [sales, yoy, units, retail, retailYoy] = await Promise.all([
+    snap("smartscout", "annual_revenue"),
+    snap("smartscout", "yoy_growth_pct"),
+    snap("smartscout", "monthly_units"),
+    snap("nielsen", "retail_annual_sales"),
+    snap("nielsen", "retail_yoy_growth_pct"),
+  ]);
+  if (sales == null) return undefined;
+  const r = retail ?? 0;
+  const presence: "None" | "Minimal" | "Emerging" | "Established" =
+    r <= 0 ? "None" : r < 100_000 ? "Minimal" : r < 15_000_000 ? "Emerging" : "Established";
+  return {
+    amazonAnnualSales: Math.round(sales),
+    amazonYoyGrowthPct: yoy ?? undefined,
+    amazonMonthlyUnits: units ? Math.round(units) : undefined,
+    retailAnnualSales: Math.round(r),
+    retailYoyGrowthPct: retailYoy ?? null,
+    retailPresence: presence,
+    sourceLabel: "SmartScout \u00d7 Nielsen xAOC \u00b7 Apr 2026",
+  };
 }
 
 // =========================================================================
@@ -494,6 +550,7 @@ function formatNum(n: number): string {
 interface AssembleInput {
   brandId: string;
   resolution: HandleResolution;
+  commerceBlock?: BrandCard["commerce"];
   tiktokR: FetcherResult<TikTokResult | SociaVaultTikTokResult>;
   instagramR: FetcherResult<InstagramResult | SociaVaultInstagramResult>;
   instagramTrend: { date: string; value: number }[];
@@ -542,6 +599,7 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
       slug: a.resolution.brandName.toLowerCase().replace(/\s+/g, "-"),
       primaryCategory: null,
     },
+    commerce: a.commerceBlock,
     resolved: {
       tiktokHandle: a.resolution.tiktokHandle,
       instagramHandle: a.resolution.instagramHandle,
