@@ -176,7 +176,7 @@ export async function getInstagramFollowerTrend(brandId: string, lookbackDays: n
   const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await db
     .from("snapshots")
-    .select("captured_at,value_numeric")
+    .select("captured_at,value_numeric,value_json")
     .eq("brand_id", brandId)
     .eq("platform", "instagram")
     .eq("metric", "follower_count")
@@ -184,7 +184,13 @@ export async function getInstagramFollowerTrend(brandId: string, lookbackDays: n
     .order("captured_at", { ascending: true });
   if (error) throw new Error(`getInstagramFollowerTrend: ${error.message}`);
   return (data ?? [])
-    .filter((r: { value_numeric: number | null }) => r.value_numeric != null)
+    .filter((r: { value_numeric: number | null; value_json: Record<string, unknown> | null }) => {
+      if (r.value_numeric == null) return false;
+      // Exclude seed/simulated snapshots — only plot real sourced data.
+      // Simulated rows have no value_json.source, or source != 'sociavault'.
+      const src = r.value_json?.["source"];
+      return src === "sociavault";
+    })
     .map((r: { captured_at: string; value_numeric: number }) => ({
       date: r.captured_at,
       value: r.value_numeric,
