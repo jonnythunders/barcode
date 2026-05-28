@@ -358,11 +358,32 @@ interface InstagramProfileRaw {
 
 function parseInstagramProfile(raw: InstagramProfileRaw, handle: string): Omit<SociaVaultInstagramResult, "source" | "capturedAt"> {
   const u = raw.user ?? {};
+  // SociaVault returns Instagram follower counts under several different
+  // field names depending on the scraping method used internally.
+  // Check every known variant so we never return null when the data is there.
+  const followerCount =
+    raw.follower_count ??
+    (raw as unknown as Record<string, number>).followers ??
+    (raw as unknown as Record<string, number>).followers_count ??
+    (raw as unknown as Record<string, number>).followed_by_count ??
+    u.edge_followed_by?.count ??
+    null;
+  const followingCount =
+    raw.following_count ??
+    (raw as unknown as Record<string, number>).following ??
+    u.edge_follow?.count ??
+    null;
+  const mediaCount =
+    raw.media_count ??
+    (raw as unknown as Record<string, number>).posts ??
+    (raw as unknown as Record<string, number>).post_count ??
+    u.edge_owner_to_timeline_media?.count ??
+    null;
   return {
     handle,
-    followerCount: raw.follower_count ?? u.edge_followed_by?.count ?? null,
-    followingCount: raw.following_count ?? u.edge_follow?.count ?? null,
-    mediaCount: raw.media_count ?? u.edge_owner_to_timeline_media?.count ?? null,
+    followerCount: followerCount != null ? Number(followerCount) : null,
+    followingCount: followingCount != null ? Number(followingCount) : null,
+    mediaCount: mediaCount != null ? Number(mediaCount) : null,
     bio: raw.biography ?? u.biography ?? null,
     isVerified: raw.is_verified ?? u.is_verified ?? null,
   };
@@ -388,6 +409,10 @@ export async function fetchSociaVaultInstagram(opts: SociaVaultOptions): Promise
       const profileUrl = `https://www.instagram.com/${handle}/`;
 
       const profileRaw = await sociaVaultGet<InstagramProfileRaw>("/instagram/profile", { handle });
+      // Log keys once in non-production so we can catch unknown field shapes.
+      if (process.env.NODE_ENV !== "production" || process.env.SOCIAVAULT_DEBUG === "1") {
+        console.log(`[sociavault-ig] raw keys for @${handle}:`, Object.keys(profileRaw as object).join(", "));
+      }
       const profile = parseInstagramProfile(profileRaw, handle);
 
       const baseJson = { source: "sociavault" as const };

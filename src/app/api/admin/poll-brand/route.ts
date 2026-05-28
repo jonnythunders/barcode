@@ -69,6 +69,7 @@ export async function GET(request: Request) {
   const slug = url.searchParams.get("slug");
   const all = url.searchParams.get("all") === "true";
   const limit = Number(url.searchParams.get("limit") ?? "0");
+  const offset = Number(url.searchParams.get("offset") ?? "0");
   const debug = url.searchParams.get("debug") === "1";
   const configCheck = url.searchParams.get("config") === "1";
 
@@ -104,9 +105,11 @@ export async function GET(request: Request) {
     .from("brands")
     .select("id, name, slug")
     .eq("is_monitored", true)
-    .eq("is_archived", false);
+    .eq("is_archived", false)
+    .order("name", { ascending: true });
   if (slug) brandsQuery = brandsQuery.eq("slug", slug);
-  if (limit > 0) brandsQuery = brandsQuery.limit(limit);
+  if (limit > 0) brandsQuery = brandsQuery.limit(limit).range(offset, offset + limit - 1);
+  else if (offset > 0) brandsQuery = brandsQuery.range(offset, offset + 999);
 
   const { data: brands, error } = await brandsQuery;
   if (error) {
