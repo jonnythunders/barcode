@@ -44,3 +44,10 @@ coverage/
 *.csv.local
 *.xlsx.local
 scratch/
+
+# Claude scratch files
+build_out.txt
+commit_msg.txt
+patch_*.py
+test_*.mjs
+dump_*.mjs
