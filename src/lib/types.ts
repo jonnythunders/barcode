@@ -218,6 +218,8 @@ export interface BrandCard {
   };
   narrative: string | null;         // 2–3 sentence AI summary (Claude)
   recommendedAction: "call_now" | "watch" | "skip" | null;
+  /** What kind of brand this is — sets expectations + gates recommendation. */
+  brandType?: "dtc_brand" | "retail_brand" | "amazon_supplier" | "unknown";
   generatedAt: string;
   partial: boolean;                 // true if any platform fetch failed
   errors: Record<string, string>;   // platform -> error message

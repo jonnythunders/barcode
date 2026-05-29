@@ -37,6 +37,7 @@ import { fetchInstagram, getInstagramFollowerTrend, type InstagramResult } from 
 import { fetchReddit, fetchRedditCommentSample, type RedditResult } from "@/lib/fetchers/reddit";
 import { analyzeSentiment, type SentimentResult } from "@/lib/sentiment";
 import { computeMomentumScore } from "@/lib/momentum";
+import { classifyAndPersistBrandType, type BrandType } from "@/lib/brand-type";
 import {
   fetchSociaVaultTikTok,
   fetchSociaVaultInstagram,
@@ -196,6 +197,16 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   // --- Step 5: momentum ---
   const momentum = await computeMomentumScore({ brandId, persistSnapshot: true });
 
+  // --- Step 5b: brand-type classification ---
+  // Determines whether this is a real placeable brand vs. an FBA/arbitrage
+  // product with no brand identity. Respects manual overrides. Feeds both the
+  // recommendation (an amazon_supplier is never "call_now") and an honest
+  // expectation label on the card.
+  const brandType = await classifyAndPersistBrandType(
+    brandId,
+    !!(resolution.tiktokHandle || resolution.instagramHandle)
+  );
+
   // --- Step 6: IG trend line ---
   const igTrend = await getInstagramFollowerTrend(brandId, 90);
 
@@ -225,6 +236,7 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   const card: BrandCard = assembleBrandCard({
     brandId,
     resolution,
+    brandType,
     commerceBlock,
     tiktokR,
     instagramR,
@@ -443,6 +455,7 @@ function notTrackedCard(name: string): BrandCard {
       `brands surfaced from the latest Amazon and Nielsen pull. ` +
       `Add it to the watchlist to start tracking, or try one of the ranked brands in Discovery.`,
     recommendedAction: null,
+    brandType: "unknown",
     generatedAt: now,
     partial: false,
     errors: {},
@@ -702,6 +715,7 @@ function formatUsd(n: number): string {
 interface AssembleInput {
   brandId: string;
   resolution: HandleResolution;
+  brandType: BrandType;
   commerceBlock?: BrandCard["commerce"];
   tiktokR: FetcherResult<TikTokResult | SociaVaultTikTokResult>;
   instagramR: FetcherResult<InstagramResult | SociaVaultInstagramResult>;
@@ -724,14 +738,21 @@ function isSociaVaultInstagram(r: InstagramResult | SociaVaultInstagramResult | 
 
 function assembleBrandCard(a: AssembleInput): BrandCard {
   const partial = Object.keys(a.errors).length > 0;
+  // amazon_supplier brands are FBA/arbitrage products with no brand identity to
+  // place — a high momentum score for them is a velocity artifact, not a real
+  // prospect, so they never get "call_now". They cap at "watch" so they remain
+  // visible (the velocity may still be worth noting) without polluting the
+  // call-now queue.
   const recommendedAction =
     a.momentum.score == null
       ? null
-      : a.momentum.score >= 70 && a.momentum.notInRetail
-        ? "call_now"
-        : a.momentum.score >= 50
-          ? "watch"
-          : "skip";
+      : a.brandType === "amazon_supplier"
+        ? (a.momentum.score >= 50 ? "watch" : "skip")
+        : a.momentum.score >= 70 && a.momentum.notInRetail
+          ? "call_now"
+          : a.momentum.score >= 50
+            ? "watch"
+            : "skip";
 
   // Provenance tagging — if the data came from SociaVault, the BrandCard's
   // PlatformBlock gets `provenance: "sourced"` + sourceLabel so the UI
@@ -840,6 +861,7 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
     },
     narrative: a.narrative,
     recommendedAction,
+    brandType: a.brandType,
     generatedAt: nowIso(),
     partial,
     errors: a.errors,
