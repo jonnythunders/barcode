@@ -32,7 +32,9 @@ import { formatCompactNumber, formatPctDelta } from "@/lib/utils";
 // the raw count + the (qualitatively useful) top threads.
 const REDDIT_VELOCITY_MIN_MENTIONS = 5;
 
-export function BrandCard({ card }: { card: BrandCardData }) {
+type DismissalState = { reason: string | null; detail: string | null; at: string } | null;
+
+export function BrandCard({ card }: { card: BrandCardData & { dismissal?: DismissalState } }) {
   // Defensive: a platform block should always be present, but if a cache write
   // or migration ever drops one, render a clean "not configured" state instead
   // of crashing the whole page on `card.tiktok.followerCount`.
@@ -120,6 +122,13 @@ export function BrandCard({ card }: { card: BrandCardData }) {
               </span>
             )}
           </div>
+        </div>
+        <div className="px-6 pb-4 -mt-1">
+          <DeprioritizeControl
+            brandId={card.brand.id}
+            brandName={card.brand.name}
+            initialDismissal={card.dismissal ?? null}
+          />
         </div>
       </div>
 
@@ -545,6 +554,119 @@ function RedditRefreshButton({ brandName }: { brandName: string }) {
     >
       <RefreshCw className={`w-3 h-3 ${state === "loading" ? "animate-spin" : ""}`} />
       {label}
+    </button>
+  );
+}
+
+
+const DEPRIORITIZE_REASONS: { value: string; label: string }[] = [
+  { value: "already_contacted", label: "Already contacted" },
+  { value: "not_a_fit", label: "Not a fit" },
+  { value: "not_interested", label: "Not interested" },
+  { value: "timing", label: "Wrong timing" },
+  { value: "other", label: "Other" },
+];
+
+/** Lets a user deprioritize a brand (with a reason) so it drops off the weekly
+ *  to-do, keeping a historical record. Understated — a quiet link, not a CTA —
+ *  and fully reversible via undo. */
+function DeprioritizeControl({
+  brandId,
+  brandName,
+  initialDismissal,
+}: {
+  brandId: string;
+  brandName: string;
+  initialDismissal: DismissalState;
+}) {
+  const [dismissal, setDismissal] = useState<DismissalState>(initialDismissal);
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function dismiss(reason: string) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/brand/deprioritize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, brandName, reason }),
+      });
+      if (res.ok) {
+        setDismissal({ reason, detail: null, at: new Date().toISOString() });
+        setPicking(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undo() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/brand/deprioritize", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId }),
+      });
+      if (res.ok) setDismissal(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (dismissal) {
+    const label =
+      DEPRIORITIZE_REASONS.find((r) => r.value === dismissal.reason)?.label ?? "Deprioritized";
+    return (
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+          Deprioritized · {label}
+        </span>
+        <button
+          type="button"
+          onClick={undo}
+          disabled={busy}
+          className="text-slate-400 hover:text-teal-700 underline disabled:opacity-50"
+        >
+          undo
+        </button>
+      </div>
+    );
+  }
+
+  if (picking) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="text-slate-500 mr-1">Reason:</span>
+        {DEPRIORITIZE_REASONS.map((r) => (
+          <button
+            key={r.value}
+            type="button"
+            onClick={() => dismiss(r.value)}
+            disabled={busy}
+            className="px-2 py-0.5 rounded-full border border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900 disabled:opacity-50"
+          >
+            {r.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setPicking(false)}
+          className="text-slate-400 hover:text-slate-600 ml-1"
+        >
+          cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setPicking(true)}
+      className="text-xs text-slate-400 hover:text-slate-600 hover:underline"
+    >
+      Deprioritize this brand
     </button>
   );
 }

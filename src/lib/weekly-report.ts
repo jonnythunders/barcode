@@ -19,6 +19,7 @@ import { getAdminSupabase } from "@/lib/supabase-admin";
 import { publicEnv } from "@/lib/env";
 import { formatCompactNumber, formatPctDelta, nowIso } from "@/lib/utils";
 import type { Salesperson } from "@/lib/types";
+import { getDismissedBrandIds } from "@/lib/deprioritize";
 
 // =========================================================================
 // Types
@@ -121,10 +122,17 @@ export async function buildWeeklyReport(opts: BuildOptions = {}): Promise<Weekly
   if (categoryIds.length > 0) {
     brandsQuery = brandsQuery.in("primary_category_id", categoryIds);
   }
-  const { data: brands } = await brandsQuery;
-  const brandsConsidered = brands?.length ?? 0;
+  const { data: allBrands } = await brandsQuery;
 
-  if (!brands || brands.length === 0) {
+  // Bury deprioritized brands: a salesperson who dismissed a brand ("already
+  // contacted", "not a fit") shouldn't see it back on next week's to-do. The
+  // dismissal stays in the prios table as a historical record; we just filter
+  // it out of the active report here.
+  const dismissed = await getDismissedBrandIds();
+  const brands = (allBrands ?? []).filter((b) => !dismissed.has(b.id));
+  const brandsConsidered = brands.length;
+
+  if (brands.length === 0) {
     return emptyReport(salesperson, categories);
   }
 

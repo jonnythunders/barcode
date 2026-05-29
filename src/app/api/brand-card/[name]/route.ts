@@ -24,6 +24,7 @@
  */
 import { NextResponse } from "next/server";
 import { getBrandCard } from "@/lib/brand-card";
+import { getDismissalForBrand } from "@/lib/deprioritize";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs"; // Playwright + snoowrap need Node, not Edge
@@ -60,7 +61,12 @@ export async function GET(
       override: hasAnyOverride ? overrides : undefined,
     });
 
-    return NextResponse.json(card, {
+    // Attach current deprioritization state (if any) so the card can render the
+    // dismissed banner + undo without a second request.
+    const dismissal = card.brand?.id ? await getDismissalForBrand(card.brand.id) : null;
+    const cardWithDismissal = { ...card, dismissal };
+
+    return NextResponse.json(cardWithDismissal, {
       headers: {
         // 5-minute browser cache; longer is fine since the underlying cache
         // has a 6h TTL, but Brand Card consumers might want to refresh
