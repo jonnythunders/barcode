@@ -210,6 +210,7 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   const partialFetches = collectErrors({ trendsR, amazonR, shopifyR, tiktokR, instagramR, redditR, sentimentR });
   const narrative = await generateNarrative({
     brandName: resolution.brandName,
+    commerce: commerceBlock ?? null,
     tiktok: tiktokR.ok ? (tiktokR.data ?? null) : null,
     instagram: instagramR.ok ? (instagramR.data ?? null) : null,
     amazon: amazonR.ok ? (amazonR.data ?? null) : null,
@@ -583,6 +584,7 @@ async function getSubredditsForBrand(brandId: string): Promise<string[]> {
 
 interface NarrativeInput {
   brandName: string;
+  commerce: BrandCard["commerce"] | null;
   tiktok: TikTokResult | SociaVaultTikTokResult | null;
   instagram: InstagramResult | SociaVaultInstagramResult | null;
   amazon: AmazonResult | null;
@@ -599,6 +601,29 @@ async function generateNarrative(input: NarrativeInput): Promise<string | null> 
     const client = new Anthropic({ apiKey: env.anthropicApiKey });
 
     const facts: string[] = [];
+
+    // Commerce is the lede for a placement rep: a brand with strong Amazon/DTC
+    // velocity but little or no measured retail presence is the core prospect.
+    // We surface these FIRST so the model leads with them, and we describe tiny
+    // retail figures qualitatively (a literal "$17" is noise, not signal).
+    if (input.commerce) {
+      const c = input.commerce;
+      if (c.amazonAnnualSales != null) {
+        const yoy = c.amazonYoyGrowthPct != null ? ` (${c.amazonYoyGrowthPct >= 0 ? "+" : ""}${Math.round(c.amazonYoyGrowthPct)}% YoY)` : "";
+        facts.push(`Amazon/DTC annual sales: ${formatUsd(c.amazonAnnualSales)}${yoy}`);
+      }
+      if (c.amazonMonthlyUnits != null) facts.push(`Amazon units/month: ${formatNum(c.amazonMonthlyUnits)}`);
+      // Describe retail presence qualitatively. Sub-$1k measured retail is
+      // effectively "not in retail" — don't quote a misleading tiny dollar figure.
+      const retail = c.retailAnnualSales ?? 0;
+      if (retail < 1000) {
+        facts.push(`Measured retail presence: negligible / effectively not in traditional retail (prime placement opportunity)`);
+      } else {
+        const ryoy = c.retailYoyGrowthPct != null ? ` (${c.retailYoyGrowthPct >= 0 ? "+" : ""}${Math.round(c.retailYoyGrowthPct)}% YoY)` : "";
+        facts.push(`Measured retail sales: ${formatUsd(retail)}${ryoy}, presence: ${c.retailPresence ?? "unknown"}`);
+      }
+    }
+
     if (input.tiktok?.followerCount != null) {
       facts.push(`TikTok: ${formatNum(input.tiktok.followerCount)} followers`);
       if (input.tiktok.engagementRate != null)
@@ -634,10 +659,14 @@ async function generateNarrative(input: NarrativeInput): Promise<string | null> 
       model: "claude-haiku-4-5-20251001",
       max_tokens: 200,
       system:
-        "You are a brand intelligence analyst at a consumer-goods rep group. " +
-        "Given factual signals about a brand, write a 2-3 sentence executive summary. " +
-        "Lead with the most important signal. Be direct and confident. " +
-        "No preamble, no markdown.",
+        "You are a brand intelligence analyst at a consumer-goods rep group that " +
+        "places emerging brands into retail. Write a 2-3 sentence executive summary. " +
+        "LEAD with the commerce story: the core opportunity is a brand with strong " +
+        "Amazon/DTC sales and growth but little or no measured retail presence — that " +
+        "gap IS the pitch (room to place them in retail). Treat social/Reddit as " +
+        "supporting context, not the headline. Never quote a tiny retail dollar figure " +
+        "as if meaningful; if retail presence is negligible, say so plainly. Be direct " +
+        "and confident. No preamble, no markdown.",
       messages: [
         { role: "user", content: `Brand: ${input.brandName}\n\nSignals:\n${facts.map((f) => `- ${f}`).join("\n")}` },
       ],
@@ -658,6 +687,12 @@ function formatNum(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
   return String(Math.round(n));
+}
+
+function formatUsd(n: number): string {
+  if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  return "$" + Math.round(n);
 }
 
 // =========================================================================
