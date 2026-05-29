@@ -21,7 +21,9 @@ import {
   Search as SearchIcon,
   MessageCircle,
   Smile,
+  RefreshCw,
 } from "lucide-react";
+import { useState } from "react";
 import type { BrandCard as BrandCardData, PlatformBlock } from "@/lib/types";
 import { formatCompactNumber, formatPctDelta } from "@/lib/utils";
 
@@ -187,6 +189,7 @@ export function BrandCard({ card }: { card: BrandCardData }) {
           title="Reddit"
           icon={<MessageCircle className="w-4 h-4" />}
           block={card.reddit}
+          headerAction={<RedditRefreshButton brandName={card.brand.name} />}
           rows={[
             ["Mentions (30d)", formatCompactNumber(card.reddit.mentionCount)],
             ["Velocity", card.reddit.velocity != null ? formatPctDelta(card.reddit.velocity) : "—"],
@@ -342,6 +345,7 @@ function PlatformSection({
   rows,
   trend,
   children,
+  headerAction,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -351,6 +355,7 @@ function PlatformSection({
   rows: [string, string][];
   trend?: { date: string; value: number }[];
   children?: React.ReactNode;
+  headerAction?: React.ReactNode;
 }) {
   const isSample = block.status === "ok" && block.provenance !== "sourced";
   const statusBadge = (() => {
@@ -399,7 +404,10 @@ function PlatformSection({
             </a>
           ) : null}
         </div>
-        {statusBadge}
+        <div className="flex items-center gap-2">
+          {headerAction}
+          {statusBadge}
+        </div>
       </div>
       <div className="px-4 py-3">
         {block.status === "ok" ? (
@@ -456,5 +464,61 @@ function Sparkline({ points }: { points: { date: string; value: number }[] }) {
         </div>
       </div>
     </div>
+  );
+}
+
+
+/**
+ * Subtle "refresh community context" control for the Reddit panel. Posts to
+ * the server-side refresh endpoint, which enforces a per-brand cooldown so
+ * this can't be abused into burning credits. Deliberately understated — a
+ * small icon+label, not a call-to-action — per the product intent that Reddit
+ * is supporting context, refreshed occasionally, not a primary interaction.
+ */
+function RedditRefreshButton({ brandName }: { brandName: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "done" | "cooldown" | "error">("idle");
+
+  async function refresh() {
+    if (state === "loading") return;
+    setState("loading");
+    try {
+      const res = await fetch(`/api/brand-card/${encodeURIComponent(brandName)}/refresh-reddit`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setState("error");
+        return;
+      }
+      if (data.refreshed === false) {
+        setState("cooldown");
+        return;
+      }
+      setState("done");
+      // Reload to show the freshly-pulled Reddit data on the card.
+      setTimeout(() => window.location.reload(), 600);
+    } catch {
+      setState("error");
+    }
+  }
+
+  const label =
+    state === "loading" ? "Refreshing…"
+      : state === "done" ? "Updated"
+      : state === "cooldown" ? "Refreshed recently"
+      : state === "error" ? "Try later"
+      : "Refresh";
+
+  return (
+    <button
+      type="button"
+      onClick={refresh}
+      disabled={state === "loading"}
+      title="Pull the latest Reddit community signal for this brand"
+      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest text-slate-400 hover:text-teal-700 disabled:opacity-50 transition-colors"
+    >
+      <RefreshCw className={`w-3 h-3 ${state === "loading" ? "animate-spin" : ""}`} />
+      {label}
+    </button>
   );
 }

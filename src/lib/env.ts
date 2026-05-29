@@ -67,10 +67,26 @@ export interface ServerEnv {
   redditUsername: string | undefined;
   redditPassword: string | undefined;
   redditUserAgent: string;
+  // Reddit is sourced via SociaVault now (not Reddit's own API). This policy
+  // controls WHEN Reddit is pulled: 'off' disables it, 'recommended_stale'
+  // (default) pulls only for call_now brands with missing/>30d-old data,
+  // 'on_demand' pulls only via the explicit refresh endpoint, 'all' pulls for
+  // every brand on every poll (expensive — assessment only).
+  redditFetchPolicy: "off" | "on_demand" | "recommended_stale" | "all";
   smartscoutApiKey: string | undefined;
   explodingTopicsApiKey: string | undefined;
   sociavaultApiKey: string | undefined;
   openaiApiKey: string | undefined;
+}
+
+function parseRedditPolicy(v: string | undefined): ServerEnv["redditFetchPolicy"] {
+  switch ((v ?? "").toLowerCase()) {
+    case "off": return "off";
+    case "on_demand": return "on_demand";
+    case "all": return "all";
+    case "recommended_stale": return "recommended_stale";
+    default: return "recommended_stale"; // safe, cost-bounded default
+  }
 }
 
 export function getServerEnv(): ServerEnv {
@@ -99,6 +115,7 @@ export function getServerEnv(): ServerEnv {
     redditUsername: optionalEnv("REDDIT_USERNAME"),
     redditPassword: optionalEnv("REDDIT_PASSWORD"),
     redditUserAgent: optionalEnv("REDDIT_USER_AGENT") || "barcode-brand-intel/0.1.0",
+    redditFetchPolicy: parseRedditPolicy(optionalEnv("REDDIT_FETCH_POLICY")),
     smartscoutApiKey: optionalEnv("SMARTSCOUT_API_KEY"),
     explodingTopicsApiKey: optionalEnv("EXPLODING_TOPICS_API_KEY"),
     sociavaultApiKey: optionalEnv("SOCIAVAULT_API_KEY"),
@@ -127,7 +144,7 @@ export function getFeatureFlags(env: ServerEnv = getServerEnv()): FeatureFlags {
     tiktokEnabled: !!(env.tiktokClientKey && env.tiktokClientSecret),
     tiktokAdsEnabled: !!env.tiktokCommercialApiKey,
     instagramEnabled: !!env.metaAccessToken,
-    redditEnabled: !!(env.redditClientId && env.redditClientSecret && env.redditUsername && env.redditPassword),
+    redditEnabled: !!env.sociavaultApiKey && env.redditFetchPolicy !== "off",
     smartscoutEnabled: !!env.smartscoutApiKey,
     explodingTopicsEnabled: !!env.explodingTopicsApiKey,
     sociaVaultEnabled: !!env.sociavaultApiKey,

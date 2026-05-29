@@ -148,6 +148,14 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
 
   const subredditsForBrand = await getSubredditsForBrand(brandId);
 
+  // Reddit is gated: it's a context/confidence signal, not a per-brand-every-poll
+  // assessor, and it's the most credit-hungry fetcher (~3-6 credits/brand). The
+  // reddit_fetch_policy + recommendation + staleness gate decides whether to pull.
+  const redditEligible = await shouldFetchReddit(brandId, opts.forceRefresh === true);
+  const redditPromise: Promise<FetcherResult<RedditResult>> = redditEligible
+    ? fetchReddit({ brandId, brandName: primaryKeyword, subreddits: subredditsForBrand, triggerKind: "on_demand" })
+    : Promise.resolve(notFoundResult<RedditResult>("reddit skipped by fetch policy"));
+
   const [trendsR, amazonR, shopifyR, tiktokR, instagramR, redditR]: [
     FetcherResult<GoogleTrendsResult>,
     FetcherResult<AmazonResult>,
@@ -161,12 +169,7 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
     shopifyPromise,
     tiktokPromise,
     instagramPromise,
-    fetchReddit({
-      brandId,
-      brandName: primaryKeyword,
-      subreddits: subredditsForBrand,
-      triggerKind: "on_demand",
-    }),
+    redditPromise,
   ]);
 
   // --- Step 4: sentiment ---
@@ -497,6 +500,71 @@ async function writeCache(brandId: string, card: BrandCard): Promise<void> {
 // =========================================================================
 // Subreddit lookup
 // =========================================================================
+
+/**
+ * Decide whether to pull Reddit for this brand, per reddit_fetch_policy:
+ *   - "off"               -> never
+ *   - "all"               -> always
+ *   - "on_demand"         -> only when explicitly forced (the refresh endpoint
+ *                            passes forceRefresh=true)
+ *   - "recommended_stale" -> (default) only for call_now-recommended brands
+ *                            whose Reddit data is missing or older than 30 days.
+ *
+ * "Recommended" mirrors the card's own recommendedAction === "call_now" gate:
+ * momentum >= 70 AND not already in Nielsen retail. That's exactly the set a
+ * salesperson is about to pitch and wants corroborating community buzz for.
+ *
+ * An explicit forceRefresh always wins (the user clicked "refresh context"),
+ * except under "off" where Reddit is hard-disabled.
+ */
+async function shouldFetchReddit(brandId: string, forceRefresh: boolean): Promise<boolean> {
+  const policy = getServerEnv().redditFetchPolicy;
+  if (policy === "off") return false;
+  if (policy === "all") return true;
+  if (forceRefresh) return true;            // explicit refresh (on_demand + recommended_stale)
+  if (policy === "on_demand") return false; // on_demand pulls ONLY via explicit refresh
+
+  // recommended_stale: require call_now recommendation AND stale/absent data.
+  const db = getAdminSupabase();
+
+  // Recommendation: recompute the same gate assembleBrandCard uses.
+  const { data: momivar } = await db
+    .from("snapshots")
+    .select("value_numeric")
+    .eq("brand_id", brandId)
+    .eq("platform", "momentum")
+    .eq("metric", "momentum_score")
+    .order("captured_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const score = momivar?.value_numeric ?? null;
+  // notInRetail: no nielsen retail snapshot (or zero). Mirrors momentum.notInRetail.
+  const { data: retail } = await db
+    .from("snapshots")
+    .select("value_numeric")
+    .eq("brand_id", brandId)
+    .eq("platform", "nielsen")
+    .eq("metric", "retail_annual_sales")
+    .order("captured_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const notInRetail = !retail || (retail.value_numeric ?? 0) <= 0;
+  const isRecommended = score != null && score >= 70 && notInRetail;
+  if (!isRecommended) return false;
+
+  // Staleness: last Reddit snapshot older than 30 days (or none).
+  const { data: lastReddit } = await db
+    .from("snapshots")
+    .select("captured_at")
+    .eq("brand_id", brandId)
+    .eq("platform", "reddit")
+    .order("captured_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!lastReddit) return true;
+  const ageMs = Date.now() - new Date(lastReddit.captured_at).getTime();
+  return ageMs > 30 * 24 * 60 * 60 * 1000;
+}
 
 async function getSubredditsForBrand(brandId: string): Promise<string[]> {
   const db = getAdminSupabase();
