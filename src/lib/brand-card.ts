@@ -256,14 +256,32 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
       return existing;
     }
   } else if (failedCount >= 2 && (sociaVaultTikTokOk || sociaVaultInstagramOk)) {
-    // Merge path: SociaVault succeeded — overlay the live social blocks onto
-    // the existing cached card so the commerce hero + narrative are preserved.
+    // Merge path: SociaVault succeeded — overlay the freshly-assembled blocks
+    // onto the cached card. Everything the live pipeline can authoritatively
+    // recompute is taken from the fresh `card`, NOT inherited from `existing`:
+    //   - commerce: re-read from snapshots every poll (readCommerceBlock). The
+    //     old code inherited existing.commerce, so a card that ever lacked a
+    //     commerce block kept losing it on every subsequent merge. Taking the
+    //     fresh value (with a safety fallback to existing) ends that cascade.
+    //   - narrative / momentumScore / recommendedAction: recomputed this run,
+    //     so the cached copies would be stale.
+    //   - tiktok / instagram: always take the fresh block. When a handle is
+    //     null or unresolved the fresh block is a clean not_configured/
+    //     not_found state — strictly more honest than a stale wrong-account
+    //     block lingering in `existing`.
+    // Only the cached `brand` identity (and any unrelated keys) are inherited.
     const existing = await readCacheRaw(brandId);
     if (existing) {
       const merged: BrandCard = {
         ...existing,
-        ...(sociaVaultTikTokOk ? { tiktok: card.tiktok } : {}),
-        ...(sociaVaultInstagramOk ? { instagram: card.instagram } : {}),
+        commerce: card.commerce ?? existing.commerce,
+        narrative: card.narrative ?? existing.narrative,
+        momentumScore: card.momentumScore,
+        recommendedAction: card.recommendedAction,
+        tiktok: card.tiktok,
+        instagram: card.instagram,
+        partial: card.partial,
+        errors: card.errors,
         generatedAt: nowIso(),
       };
       await writeCache(brandId, merged);
@@ -358,16 +376,37 @@ async function findTrackedBrand(name: string): Promise<{ id: string; name: strin
     .maybeSingle();
   if (exact) return { id: exact.id, name: exact.name };
 
-  // Forgiving path: normalize and compare against all seeded brands.
+  // Forgiving path: normalize and compare against all seeded brands. We match
+  // on TWO normalizations so deep-links work regardless of how the slug was
+  // formed:
+  //   - normalizeBrandName: spaces between tokens ("DR.MELAXIN" -> "dr melaxin")
+  //   - slugCompact:        punctuation removed, no spaces ("drmelaxin")
+  // A URL like /brand-card/drmelaxin yields queryName "drmelaxin", which only
+  // matches via the compact form — the space-separated form would miss.
   const target = normalizeBrandName(trimmed);
-  if (!target) return null;
+  const targetCompact = compactName(trimmed);
+  if (!target && !targetCompact) return null;
   const { data: all } = await db
     .from("brands")
     .select("id,name")
     .contains("tags", ["demo-seed"]);
   if (!all) return null;
-  const hit = all.find((b) => normalizeBrandName(b.name) === target);
+  const hit = all.find(
+    (b) =>
+      normalizeBrandName(b.name) === target ||
+      compactName(b.name) === targetCompact
+  );
   return hit ? { id: hit.id, name: hit.name } : null;
+}
+
+/** Punctuation- and space-free lowercase form. "DR.MELAXIN" -> "drmelaxin",
+ *  "Head & Shoulders" -> "headandshoulders". Used so a slug that dropped all
+ *  punctuation still resolves to its brand row. */
+function compactName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "");
 }
 
 /** A clean "this brand isn't tracked yet" card. Returned for any name outside

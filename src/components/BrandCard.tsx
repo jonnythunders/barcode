@@ -26,6 +26,21 @@ import type { BrandCard as BrandCardData, PlatformBlock } from "@/lib/types";
 import { formatCompactNumber, formatPctDelta } from "@/lib/utils";
 
 export function BrandCard({ card }: { card: BrandCardData }) {
+  // Defensive: a platform block should always be present, but if a cache write
+  // or migration ever drops one, render a clean "not configured" state instead
+  // of crashing the whole page on `card.tiktok.followerCount`.
+  const emptyBlock: PlatformBlock = { status: "not_configured", capturedAt: card.generatedAt };
+  card = {
+    ...card,
+    tiktok: card.tiktok ?? emptyBlock,
+    instagram: card.instagram ?? emptyBlock,
+    amazon: card.amazon ?? emptyBlock,
+    googleTrends: card.googleTrends ?? emptyBlock,
+    reddit: card.reddit ?? emptyBlock,
+    sentiment: card.sentiment ?? emptyBlock,
+    momentumScore: card.momentumScore ?? { score: null, asOf: card.generatedAt },
+  };
+
   const score = card.momentumScore.score;
   const scoreColor =
     score == null
