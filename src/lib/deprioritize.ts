@@ -6,16 +6,19 @@
  * extended with `reason` + `reason_detail`. We reuse one prio row per
  * (auth_user_id, brand) so re-dismissing updates rather than piling up rows.
  *
- * V1 auth note: the app has no per-user login yet, so dismissals are scoped to
- * a single shared TEAM id. The data model is already per-user (auth_user_id),
- * so when real auth lands this becomes per-salesperson with no schema change —
- * pass the real user id instead of the sentinel.
+ * V1 auth note: the routes don't yet pass the logged-in user, so dismissals are
+ * scoped to a single shared pilot id — the owner account. prios.auth_user_id has
+ * an FK to auth.users, so this MUST be a real user id, not a synthetic sentinel.
+ * The data model is already per-user, so when session wiring reaches these routes
+ * this becomes per-salesperson with no schema change — pass the real user id.
  */
 import { getAdminSupabase } from "@/lib/supabase-admin";
 
-// Sentinel "team" id used until per-user auth exists. A fixed UUID so all
-// dismissals share one scope and the weekly report can filter on it.
-export const TEAM_SCOPE_ID = "00000000-0000-0000-0000-0000000000aa";
+// Shared pilot scope until per-user session wiring reaches these routes. This
+// MUST be a real auth.users id (prios.auth_user_id has an FK to auth.users) —
+// a synthetic UUID violates the constraint. Using the owner account
+// (jon@youngproducts.ai) as the shared scope for now.
+export const TEAM_SCOPE_ID = "0d8c1f49-7f25-4576-aaef-72a3d73531a7";
 
 export type DeprioritizeReason =
   | "not_a_fit"
