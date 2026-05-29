@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { getSupabaseClient } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sparkles, ArrowRight } from "lucide-react";
+import { BrandTypeFlag, DeprioritizedFlag, type BrandTypeValue } from "@/components/BrandFlags";
 
 interface BrandRow {
   id: string;
@@ -15,6 +16,8 @@ interface BrandRow {
   notes: string | null;
   momentumScore: number | null;
   lane: string | null;
+  brandType: BrandTypeValue;
+  dismissed: boolean;
 }
 
 interface SnapshotRow {
@@ -47,7 +50,7 @@ export default function DashboardPage() {
     (async () => {
       const { data: brands } = await supabase
         .from("brands")
-        .select("id, name, slug, is_monitored, notes, created_at")
+        .select("id, name, slug, is_monitored, notes, created_at, brand_type")
         .eq("is_archived", false)
         .limit(200); // no created_at sort — we re-sort by score below
 
@@ -69,6 +72,17 @@ export default function DashboardPage() {
         if (!latestByBrand.has(s.brand_id)) latestByBrand.set(s.brand_id, s.value_numeric);
       }
 
+      let dismissedSet = new Set<string>();
+      try {
+        const res = await fetch("/api/brands/dismissed");
+        if (res.ok) {
+          const j = await res.json();
+          dismissedSet = new Set<string>(j.dismissedIds ?? []);
+        }
+      } catch {
+        // non-fatal
+      }
+
       const enriched: BrandRow[] = brands.map((b) => ({
         id: b.id,
         name: b.name,
@@ -77,6 +91,8 @@ export default function DashboardPage() {
         notes: b.notes,
         momentumScore: latestByBrand.get(b.id) ?? null,
         lane: (b.notes ?? "").includes("Functional Beverages") ? "Bev" : "H&B",
+        brandType: (b.brand_type as BrandTypeValue) ?? null,
+        dismissed: dismissedSet.has(b.id),
       }));
 
       if (!mounted) return;
@@ -133,10 +149,12 @@ export default function DashboardPage() {
           ) : (
             <ul className="divide-y divide-slate-100 -mx-5">
               {topBrands.map((b) => (
-                <li key={b.id} className="px-5 py-2.5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                <li key={b.id} className={`px-5 py-2.5 flex items-center justify-between hover:bg-slate-50 transition-colors ${b.dismissed ? "opacity-55" : ""}`}>
                   <Link href={`/brand-card/${b.slug}`} className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium text-slate-900 truncate">{b.name}</p>
+                      <BrandTypeFlag type={b.brandType} />
+                      {b.dismissed && <DeprioritizedFlag />}
                       {b.lane && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium flex-shrink-0">
                           {b.lane}
@@ -182,10 +200,12 @@ export default function DashboardPage() {
           ) : (
             <ul className="divide-y divide-slate-100 -mx-5">
               {recent.map((b) => (
-                <li key={b.id} className="px-5 py-2.5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                <li key={b.id} className={`px-5 py-2.5 flex items-center justify-between hover:bg-slate-50 transition-colors ${b.dismissed ? "opacity-55" : ""}`}>
                   <Link href={`/brand-card/${b.slug}`} className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium text-slate-900 truncate">{b.name}</p>
+                      <BrandTypeFlag type={b.brandType} />
+                      {b.dismissed && <DeprioritizedFlag />}
                       {b.lane && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium flex-shrink-0">
                           {b.lane}

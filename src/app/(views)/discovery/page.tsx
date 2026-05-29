@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getSupabaseClient } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sparkles } from "lucide-react";
+import { BrandTypeFlag, DeprioritizedFlag, type BrandTypeValue } from "@/components/BrandFlags";
 
 interface DiscoveredBrand {
   id: string;
@@ -15,6 +16,8 @@ interface DiscoveredBrand {
   notes: string | null;
   momentumScore: number | null;
   primary_category_id: string | null;
+  brandType: BrandTypeValue;
+  dismissed: boolean;
 }
 
 interface SnapshotRow {
@@ -58,7 +61,7 @@ export default function DiscoveryPage() {
 
       const { data: raw } = await supabase
         .from("brands")
-        .select("id, name, slug, discovery_source, first_seen_at, notes, primary_category_id")
+        .select("id, name, slug, discovery_source, first_seen_at, notes, primary_category_id, brand_type")
         .eq("is_archived", false)
         .neq("discovery_source", "manual")
         .gte("first_seen_at", sinceIso)
@@ -87,6 +90,18 @@ export default function DiscoveryPage() {
         if (!latestByBrand.has(s.brand_id)) latestByBrand.set(s.brand_id, s.value_numeric);
       }
 
+      // Which brands are deprioritized (team-scoped) — flagged + dimmed below.
+      let dismissedSet = new Set<string>();
+      try {
+        const res = await fetch("/api/brands/dismissed");
+        if (res.ok) {
+          const j = await res.json();
+          dismissedSet = new Set<string>(j.dismissedIds ?? []);
+        }
+      } catch {
+        // non-fatal: list still renders without dismissal flags
+      }
+
       const enriched: DiscoveredBrand[] = raw.map((b) => ({
         id: b.id,
         name: b.name,
@@ -96,6 +111,8 @@ export default function DiscoveryPage() {
         notes: b.notes,
         momentumScore: latestByBrand.get(b.id) ?? null,
         primary_category_id: b.primary_category_id,
+        brandType: (b.brand_type as BrandTypeValue) ?? null,
+        dismissed: dismissedSet.has(b.id),
       }));
 
       enriched.sort((a, b) => (b.momentumScore ?? -1) - (a.momentumScore ?? -1));
@@ -183,14 +200,16 @@ export default function DiscoveryPage() {
                         ? "text-amber-700 bg-amber-50"
                         : "text-slate-500 bg-slate-100";
                 return (
-                  <li key={b.id} className="px-5 py-3 hover:bg-slate-50/80 transition-colors group">
+                  <li key={b.id} className={`px-5 py-3 hover:bg-slate-50/80 transition-colors group ${b.dismissed ? "opacity-55" : ""}`}>
                     <Link href={`/brand-card/${b.slug}`} className="flex items-center gap-3">
                       <span className="w-6 flex-shrink-0 text-right text-xs font-semibold tabular-nums text-slate-300 group-hover:text-teal-600 transition-colors">
                         {i + 1}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-semibold text-slate-900 truncate">{b.name}</p>
+                          <BrandTypeFlag type={b.brandType} />
+                          {b.dismissed && <DeprioritizedFlag />}
                           <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${src.color}`}>
                             {src.label}
                           </span>

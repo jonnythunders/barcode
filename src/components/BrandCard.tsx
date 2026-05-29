@@ -22,6 +22,7 @@ import {
   MessageCircle,
   Smile,
   RefreshCw,
+  Archive,
 } from "lucide-react";
 import { useState } from "react";
 import type { BrandCard as BrandCardData, PlatformBlock } from "@/lib/types";
@@ -123,7 +124,7 @@ export function BrandCard({ card }: { card: BrandCardData & { dismissal?: Dismis
             )}
           </div>
         </div>
-        <div className="px-6 pb-4 -mt-1">
+        <div className="flex items-center justify-end gap-3 px-6 py-3 border-t border-slate-100">
           <DeprioritizeControl
             brandId={card.brand.id}
             brandName={card.brand.name}
@@ -664,9 +665,10 @@ function DeprioritizeControl({
     <button
       type="button"
       onClick={() => setPicking(true)}
-      className="text-xs text-slate-400 hover:text-slate-600 hover:underline"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 transition-colors"
     >
-      Deprioritize this brand
+      <Archive className="w-3.5 h-3.5" />
+      Deprioritize
     </button>
   );
 }

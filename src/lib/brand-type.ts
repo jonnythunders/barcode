@@ -106,7 +106,11 @@ export async function classifyBrandType(
 
   const retail = retailAnnualSales ?? 0;
   const maxSocial = Math.max(tiktokFollowers ?? 0, instagramFollowers ?? 0);
-  const hasSocialFootprint = maxSocial >= SOCIAL_FOOTPRINT_FLOOR;
+  // A follower count only counts as a real footprint if a handle was actually
+  // resolved. Orphaned follower snapshots (sample/seed data, or stale numbers
+  // from a since-cleared resolution) must NOT count — otherwise an FBA supplier
+  // with leftover sample followers gets misclassified as a real brand.
+  const hasSocialFootprint = !!resolved && maxSocial >= SOCIAL_FOOTPRINT_FLOOR;
   const hasRealRetail = retail >= RETAIL_PRESENCE_FLOOR;
 
   // 1) Established in measured retail -> retail_brand.
