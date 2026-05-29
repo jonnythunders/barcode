@@ -72,6 +72,10 @@ export async function GET(request: Request) {
   const offset = Number(url.searchParams.get("offset") ?? "0");
   const debug = url.searchParams.get("debug") === "1";
   const configCheck = url.searchParams.get("config") === "1";
+  // ?clear=1 deletes each brand's cached card BEFORE polling, forcing a clean
+  // rebuild. Use after a code fix so a partial poll can't leave a stale
+  // sample/error block lingering in the merged card.
+  const clearCache = url.searchParams.get("clear") === "1";
 
   // ---- Config / env-var diagnostic mode ----
   // Returns what the runtime actually sees — without exposing key values.
@@ -132,7 +136,27 @@ export async function GET(request: Request) {
     const start = Date.now();
     const pollStartIso = new Date(start - 1000).toISOString();
     try {
+      // When clearing, snapshot the existing card first so a failed rebuild
+      // can be rolled back rather than leaving the brand with no card at all.
+      let backupCard: unknown = null;
+      if (clearCache) {
+        const { data: existing } = await db
+          .from("brand_card_cache")
+          .select("payload")
+          .eq("brand_id", b.id)
+          .maybeSingle();
+        backupCard = existing?.payload ?? null;
+        await db.from("brand_card_cache").delete().eq("brand_id", b.id);
+      }
       const card = await getBrandCard({ brandName: b.name, forceRefresh: true });
+      // Rollback guard: if the rebuild produced a notTracked/empty card but we
+      // had a real one before, restore the backup so clear=1 can never destroy data.
+      if (clearCache && backupCard && (card as { notTracked?: boolean }).notTracked) {
+        await db.from("brand_card_cache").upsert(
+          { brand_id: b.id, payload: backupCard, generated_at: new Date().toISOString() },
+          { onConflict: "brand_id" }
+        );
+      }
       const result: BrandResult = {
         slug: b.slug,
         name: b.name,

@@ -27,6 +27,11 @@ import { useState } from "react";
 import type { BrandCard as BrandCardData, PlatformBlock } from "@/lib/types";
 import { formatCompactNumber, formatPctDelta } from "@/lib/utils";
 
+// Minimum 30-day Reddit mentions before we trust/show a velocity %. Below this,
+// the sample is too small for a percentage to mean anything, so we show only
+// the raw count + the (qualitatively useful) top threads.
+const REDDIT_VELOCITY_MIN_MENTIONS = 5;
+
 export function BrandCard({ card }: { card: BrandCardData }) {
   // Defensive: a platform block should always be present, but if a cache write
   // or migration ever drops one, render a clean "not configured" state instead
@@ -190,11 +195,21 @@ export function BrandCard({ card }: { card: BrandCardData }) {
           icon={<MessageCircle className="w-4 h-4" />}
           block={card.reddit}
           headerAction={<RedditRefreshButton brandName={card.brand.name} />}
-          rows={[
-            ["Mentions (30d)", formatCompactNumber(card.reddit.mentionCount)],
-            ["Velocity", card.reddit.velocity != null ? formatPctDelta(card.reddit.velocity) : "—"],
-            ["Top threads", String(card.reddit.topThreads?.length ?? 0)],
-          ]}
+          rows={
+            // Velocity on tiny samples (e.g. 1->2 = "+100%") is noise, so only
+            // surface it once mentions clear a meaningful floor. Below that,
+            // Reddit reads as a qualitative signal: mention count + top threads.
+            (card.reddit.mentionCount ?? 0) >= REDDIT_VELOCITY_MIN_MENTIONS
+              ? [
+                  ["Mentions (30d)", formatCompactNumber(card.reddit.mentionCount)],
+                  ["Velocity", card.reddit.velocity != null ? formatPctDelta(card.reddit.velocity) : "—"],
+                  ["Top threads", String(card.reddit.topThreads?.length ?? 0)],
+                ]
+              : [
+                  ["Mentions (30d)", formatCompactNumber(card.reddit.mentionCount)],
+                  ["Top threads", String(card.reddit.topThreads?.length ?? 0)],
+                ]
+          }
         />
         <PlatformSection
           title="Sentiment"
@@ -420,7 +435,7 @@ function PlatformSection({
                 </div>
               ))}
             </dl>
-            {trend && trend.length > 1 && <Sparkline points={trend} />}
+            {trend && hasMeaningfulTrend(trend) && <Sparkline points={trend} />}
             {children}
           </>
         ) : (
@@ -435,6 +450,17 @@ function PlatformSection({
  * Tiny SVG sparkline. Just enough to communicate trend direction —
  * we'll swap for Recharts when we want real interactivity.
  */
+/** A 2-point or same-week line isn't a trend, it's noise. Require at least 3
+ *  real points spanning >= 14 days before we draw a sparkline. As real polling
+ *  history accumulates this naturally starts showing; early on it stays hidden
+ *  rather than implying a trend we can't yet support. */
+function hasMeaningfulTrend(points: { date: string; value: number }[]): boolean {
+  if (points.length < 3) return false;
+  const first = new Date(points[0].date).getTime();
+  const last = new Date(points[points.length - 1].date).getTime();
+  return last - first >= 14 * 24 * 60 * 60 * 1000;
+}
+
 function Sparkline({ points }: { points: { date: string; value: number }[] }) {
   if (points.length < 2) return null;
   const values = points.map((p) => p.value);
