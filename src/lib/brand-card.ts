@@ -268,8 +268,26 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   if (failedCount >= 2 && !sociaVaultTikTokOk && !sociaVaultInstagramOk) {
     const existing = await readCacheRaw(brandId);
     if (existing) {
-      console.log(`[brand-card] ${resolution.brandName}: live fetch mostly failed (${failedCount}), keeping cached card`);
-      return existing;
+      // Keep cached SOCIAL blocks (don't overwrite good social with error/
+      // not_found states), but still apply the fields the live pipeline
+      // recomputes from snapshots + classification — these are valid even when
+      // every social fetch fails, and NOT applying them was the bug that left
+      // amazon_supplier brands stuck at call_now with brandType=null.
+      const merged: BrandCard = {
+        ...existing,
+        commerce: card.commerce ?? existing.commerce,
+        momentumScore: card.momentumScore,
+        recommendedAction: card.recommendedAction,
+        brandType: card.brandType,
+        narrative: card.narrative ?? existing.narrative,
+        // credential-free sources that succeeded this run still update
+        googleTrends: trendsR.ok ? card.googleTrends : existing.googleTrends,
+        reddit: redditR.ok ? card.reddit : existing.reddit,
+        generatedAt: nowIso(),
+      };
+      await writeCache(brandId, merged);
+      console.log(`[brand-card] ${resolution.brandName}: live social failed (${failedCount}); kept cached social, applied recomputed type/score/recommendation`);
+      return merged;
     }
   } else if (failedCount >= 2 && (sociaVaultTikTokOk || sociaVaultInstagramOk)) {
     // Merge path: SociaVault succeeded — overlay the freshly-assembled blocks
@@ -294,6 +312,7 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
         narrative: card.narrative ?? existing.narrative,
         momentumScore: card.momentumScore,
         recommendedAction: card.recommendedAction,
+        brandType: card.brandType,
         tiktok: card.tiktok,
         instagram: card.instagram,
         // Carry any OTHER block whose live fetch succeeded this run. Without
