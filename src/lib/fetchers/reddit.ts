@@ -123,6 +123,33 @@ function listValues<T>(v: Record<string, T> | T[] | undefined): T[] {
   return Array.isArray(v) ? v : Object.values(v);
 }
 
+// Velocity is only computed when the PRIOR window has at least this many
+// mentions — otherwise a 1->N jump produces absurd percentages (1 prior, 23 now
+// = "+2200%"). Below this, velocity is null and the UI shows only the count.
+const VELOCITY_MIN_PRIOR = 3;
+// Cap reported velocity so even a valid-but-explosive ratio stays sane in the UI.
+const VELOCITY_CAP = 5; // +500%
+
+/** Does this post actually mention the brand? SociaVault's subreddit search is
+ *  fuzzy and, for generic/short brand names (SEED, Hint, BASED), returns lots of
+ *  category posts that merely share a word. We require the brand name to appear
+ *  as a token (or contiguous phrase) in the title, which cuts the bulk of that
+ *  noise. Multi-word brands match if ALL significant tokens appear. */
+function titleMentionsBrand(title: string | undefined, brand: string): boolean {
+  if (!title) return false;
+  const t = title.toLowerCase();
+  const b = brand.toLowerCase().trim();
+  if (t.includes(b)) return true; // exact phrase
+  // Token match: every significant (3+ char) brand token must be present.
+  const tokens = b.replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length >= 3);
+  if (tokens.length === 0) {
+    // Very short brand (e.g. "ZOA") — require the whole compact form present.
+    const compact = b.replace(/[^a-z0-9]+/g, "");
+    return compact.length >= 2 && t.replace(/[^a-z0-9]+/g, "").includes(compact);
+  }
+  return tokens.every((tok) => new RegExp(`\\b${tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(t));
+}
+
 // =========================================================================
 // Main entry
 // =========================================================================
@@ -169,7 +196,9 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
             time: "year",    // cap server scan; we window precisely client-side
           });
           for (const p of listValues(env.data?.posts)) {
-            if (p.id && !seen.has(p.id)) {
+            // Filter SociaVault's fuzzy matches down to posts that actually
+            // name the brand — kills generic category noise for short names.
+            if (p.id && !seen.has(p.id) && titleMentionsBrand(p.title, opts.brandName)) {
               seen.add(p.id);
               all.push(p);
             }
@@ -188,8 +217,13 @@ export async function fetchReddit(opts: RedditOptions): Promise<FetcherResult<Re
         else if (t >= priorStartSec) inPrior.push(p);
       }
 
+      // Only compute velocity when the prior window is substantial enough for a
+      // ratio to mean something, and cap it so an explosive-but-valid jump
+      // doesn't render as an absurd percentage.
       const velocity =
-        inPrior.length > 0 ? (inWindow.length - inPrior.length) / inPrior.length : null;
+        inPrior.length >= VELOCITY_MIN_PRIOR
+          ? Math.min(VELOCITY_CAP, (inWindow.length - inPrior.length) / inPrior.length)
+          : null;
 
       const topThreads: RedditThreadSummary[] = inWindow
         .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
