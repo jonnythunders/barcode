@@ -280,6 +280,16 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
         recommendedAction: card.recommendedAction,
         tiktok: card.tiktok,
         instagram: card.instagram,
+        // Carry any OTHER block whose live fetch succeeded this run. Without
+        // this, a credential-free source like Google Trends (which always
+        // runs and succeeds) would compute fresh data every poll yet never
+        // reach the card — the stale sample block in `existing` would win.
+        // We only overwrite when the fresh fetch was ok, so a transient
+        // rate-limit can't wipe a previously-good block.
+        googleTrends: trendsR.ok ? card.googleTrends : existing.googleTrends,
+        reddit: redditR.ok ? card.reddit : existing.reddit,
+        sentiment: sentimentR?.ok ? card.sentiment : existing.sentiment,
+        amazon: amazonR.ok ? card.amazon : existing.amazon,
         partial: card.partial,
         errors: card.errors,
         generatedAt: nowIso(),
@@ -690,6 +700,11 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
       status: platformStatus(a.trendsR),
       capturedAt: a.trendsR.capturedAt,
       error: a.trendsR.ok ? undefined : a.trendsR.error,
+      // Google Trends needs no credentials and returns real interest-over-time
+      // data, so a successful fetch is genuinely sourced — tag it so the UI
+      // shows a teal "Google Trends" badge instead of amber "Preview · sample".
+      provenance: a.trendsR.ok ? "sourced" : undefined,
+      sourceLabel: a.trendsR.ok ? "Google Trends" : undefined,
       searchVolumeTrend: a.trendsR.data?.series ?? undefined,
       yoyChangePct: a.trendsR.data?.yoyChangePct ?? undefined,
     },
@@ -697,6 +712,9 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
       status: platformStatus(a.redditR),
       capturedAt: a.redditR.capturedAt,
       error: a.redditR.ok ? undefined : a.redditR.error,
+      // A successful Reddit fetch is real community data — tag sourced.
+      provenance: a.redditR.ok ? "sourced" : undefined,
+      sourceLabel: a.redditR.ok ? "Reddit" : undefined,
       mentionCount: a.redditR.data?.mentionCount ?? undefined,
       velocity: a.redditR.data?.velocity ?? undefined,
       topThreads: a.redditR.data?.topThreads as RedditThreadSummary[] | undefined,
@@ -705,6 +723,8 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
       status: a.sentimentR ? platformStatus(a.sentimentR) : "skipped",
       capturedAt: a.sentimentR?.capturedAt,
       error: a.sentimentR && !a.sentimentR.ok ? a.sentimentR.error : undefined,
+      provenance: a.sentimentR?.ok ? "sourced" : undefined,
+      sourceLabel: a.sentimentR?.ok ? "Claude sentiment" : undefined,
       overallScore: a.sentimentR?.data?.overallScore ?? undefined,
       positiveThemes: a.sentimentR?.data?.positiveThemes ?? undefined,
       negativeThemes: a.sentimentR?.data?.negativeThemes ?? undefined,

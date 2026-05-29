@@ -127,7 +127,7 @@ export function getFeatureFlags(env: ServerEnv = getServerEnv()): FeatureFlags {
     tiktokEnabled: !!(env.tiktokClientKey && env.tiktokClientSecret),
     tiktokAdsEnabled: !!env.tiktokCommercialApiKey,
     instagramEnabled: !!env.metaAccessToken,
-    redditEnabled: !!(env.redditClientId && env.redditClientSecret),
+    redditEnabled: !!(env.redditClientId && env.redditClientSecret && env.redditUsername && env.redditPassword),
     smartscoutEnabled: !!env.smartscoutApiKey,
     explodingTopicsEnabled: !!env.explodingTopicsApiKey,
     sociaVaultEnabled: !!env.sociavaultApiKey,
