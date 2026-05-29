@@ -14,6 +14,7 @@
  */
 import { getAdminSupabase } from "@/lib/supabase-admin";
 import { nowIso, slugify } from "@/lib/utils";
+import { searchTikTokHandle, searchInstagramHandle } from "@/lib/fetchers/handle-search";
 
 export interface HandleResolution {
   brandId: string | null;
@@ -31,7 +32,7 @@ export interface HandleResolution {
 }
 
 export interface ResolutionLogEntry {
-  strategy: "db_brands" | "db_cache" | "deterministic_guess" | "unresolved";
+  strategy: "db_brands" | "db_cache" | "search" | "deterministic_guess" | "unresolved";
   matched: boolean;
   detail?: string;
 }
@@ -181,33 +182,74 @@ export async function resolveBrandHandles(opts: ResolveOptions): Promise<HandleR
     log.push({ strategy: "db_cache", matched: false });
   }
 
-  // --- Strategy 3: deterministic guesses (low-confidence candidates) ---
-  const guesses = guessHandlesFromName(name);
+  // --- Strategy 3: search-based resolution (SociaVault) ---
+  // Instead of guessing slug variants and hoping a fetcher 404s the wrong
+  // ones, we SEARCH the platform for the brand name and score the candidates.
+  // High-confidence matches are auto-applied and persisted; borderline ones
+  // are applied but flagged "needs_review" in handle_resolutions; low matches
+  // are left null so the card honestly shows "not configured" rather than a
+  // wrong account. Slug guessing remains only as a last-resort candidate list.
+  const ttSearch = await searchTikTokHandle(name);
+  // Seed the IG verification with the TikTok handle (brands usually reuse it).
+  const igSeeds = ttSearch.best ? [ttSearch.best.handle] : [];
+  const igSearch = await searchInstagramHandle(name, igSeeds);
+
+  const tiktokHandle = ttSearch.best?.handle ?? null;
+  const instagramHandle = igSearch.best?.handle ?? null;
+
   log.push({
-    strategy: "deterministic_guess",
-    matched: guesses.length > 0,
-    detail: `${guesses.length} candidates`,
+    strategy: "search",
+    matched: !!(tiktokHandle || instagramHandle),
+    detail: `tt=${ttSearch.confidence}(${ttSearch.best?.score.toFixed(2) ?? "-"}) ig=${igSearch.confidence}(${igSearch.best?.score.toFixed(2) ?? "-"}) credits=${ttSearch.creditsUsed + igSearch.creditsUsed}`,
   });
 
-  const { brandRow, brandId } = await ensureBrandRow(name, {}, opts.persistToBrandsRow);
-  await logResolution(db, name, brandId, {}, "low", { strategy: "deterministic_guess", candidates: guesses });
+  // Overall confidence: the better of the two platforms, mapped to the
+  // resolver's confidence scale. "high" search -> high; "needs_review" -> low
+  // (so the existing cache logic won't blindly reuse it without a re-check).
+  const overall: HandleResolution["confidence"] =
+    ttSearch.confidence === "high" || igSearch.confidence === "high"
+      ? "high"
+      : ttSearch.confidence === "needs_review" || igSearch.confidence === "needs_review"
+        ? "low"
+        : "unresolved";
 
-  // Return the FIRST guess as a low-confidence handle so downstream
-  // fetchers (SociaVault, TikTok native) at least get an attempt. If the
-  // guess is wrong the fetcher 404s and we log it; over time, manual
-  // overrides via `brands.tiktok_handle` / `instagram_handle` correct
-  // these (the resolver short-circuits on populated handles in strategy 1).
-  const bestGuess = guesses[0] ?? null;
+  // Only persist handles to the brands row when we're confident (high). For
+  // needs_review/low we still return them for THIS fetch attempt but don't
+  // bake them in, so a human (or a later higher-confidence search) can correct.
+  const persistHandles = overall === "high";
+  const { brandRow, brandId } = await ensureBrandRow(
+    name,
+    persistHandles ? { tiktokHandle, instagramHandle } : {},
+    opts.persistToBrandsRow && persistHandles
+  );
+
+  // Slug guesses kept only as candidate suggestions (never auto-applied now).
+  const guesses = guessHandlesFromName(name);
+
+  // Log confidence: "high" when auto-accepted, otherwise "low" (covers both
+  // needs_review and unresolved) so the cache layer in Strategy 2 won't reuse a
+  // shaky result without a fresh search. The detailed per-platform scores and
+  // candidate lists are stored in resolution_log for the review queue.
+  const logConf: "high" | "low" = overall === "high" ? "high" : "low";
+  await logResolution(db, name, brandId, { tiktokHandle, instagramHandle }, logConf, {
+    strategy: "search",
+    tiktok: { confidence: ttSearch.confidence, best: ttSearch.best, candidates: ttSearch.candidates.slice(0, 5) },
+    instagram: { confidence: igSearch.confidence, best: igSearch.best, candidates: igSearch.candidates.slice(0, 5) },
+    slugGuesses: guesses,
+  });
 
   return {
     brandId,
     brandName: brandRow?.name ?? name,
-    tiktokHandle: bestGuess,
-    instagramHandle: bestGuess,
+    tiktokHandle,
+    instagramHandle,
     amazonBrand: null,
     websiteUrl: null,
-    confidence: bestGuess ? "low" : "unresolved",
-    candidates: { tiktok: guesses, instagram: guesses },
+    confidence: overall,
+    candidates: {
+      tiktok: ttSearch.candidates.map((c) => c.handle),
+      instagram: igSearch.candidates.map((c) => c.handle),
+    },
     resolutionLog: log,
   };
 }
