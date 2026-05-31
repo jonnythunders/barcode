@@ -24,7 +24,9 @@ import {
   RefreshCw,
   Archive,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { ThumbsUp, ThumbsDown } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 import type { BrandCard as BrandCardData, PlatformBlock } from "@/lib/types";
 import { formatCompactNumber, formatPctDelta } from "@/lib/utils";
 
@@ -124,7 +126,8 @@ export function BrandCard({ card }: { card: BrandCardData & { dismissal?: Dismis
             )}
           </div>
         </div>
-        <div className="flex items-center justify-end gap-3 px-6 py-3 border-t border-slate-100">
+        <div className="flex items-center justify-between gap-3 px-6 py-3 border-t border-slate-100">
+          <FeedbackControl brandId={card.brand.id} />
           <DeprioritizeControl
             brandId={card.brand.id}
             brandName={card.brand.name}
@@ -567,6 +570,164 @@ const DEPRIORITIZE_REASONS: { value: string; label: string }[] = [
   { value: "timing", label: "Wrong timing" },
   { value: "other", label: "Other" },
 ];
+
+/**
+ * Rep feedback on the recommendation — thumbs up/down, attributed to the
+ * logged-in rep. An internal signal for the owner to spot where the engine's
+ * recommendation/data disagrees with the rep's ground truth. A down-vote opens
+ * an optional one-line note (the diagnostic payload, e.g. "already in 400
+ * Targets"). Loads the rep's own current vote on mount. Capture only — voting
+ * does not change the score. Sends the auth token so the vote is per-rep.
+ */
+function FeedbackControl({ brandId }: { brandId: string }) {
+  const { token } = useAuth();
+  const [vote, setVote] = useState<1 | -1 | null>(null);
+  const [note, setNote] = useState("");
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMine() {
+      if (!token) {
+        setLoaded(true);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/brand/feedback?brandId=${encodeURIComponent(brandId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            setVote(data.vote ?? null);
+            setNote(data.note ?? "");
+          }
+        }
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    }
+    void loadMine();
+    return () => {
+      cancelled = true;
+    };
+  }, [brandId, token]);
+
+  async function send(next: 1 | -1) {
+    if (!token || busy) return;
+    // Toggling the active vote off clears it.
+    if (vote === next) {
+      setBusy(true);
+      try {
+        const res = await fetch("/api/brand/feedback", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ brandId }),
+        });
+        if (res.ok) {
+          setVote(null);
+          setNote("");
+          setNoteOpen(false);
+        }
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/brand/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ brandId, vote: next, note: next === -1 ? note : null }),
+      });
+      if (res.ok) {
+        setVote(next);
+        setNoteOpen(next === -1); // down-vote: invite a reason
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveNote() {
+    if (!token || vote == null) return;
+    setBusy(true);
+    try {
+      await fetch("/api/brand/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ brandId, vote, note }),
+      });
+      setNoteOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!loaded || !token) {
+    // Nothing to show until we know the rep's state (and only for logged-in reps).
+    return <div className="flex-1" />;
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="text-slate-400">Useful recommendation?</span>
+        <button
+          type="button"
+          onClick={() => send(1)}
+          disabled={busy}
+          aria-label="Thumbs up"
+          className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors disabled:opacity-50 ${
+            vote === 1
+              ? "border-teal-300 bg-teal-50 text-teal-700"
+              : "border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          }`}
+        >
+          <ThumbsUp className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => send(-1)}
+          disabled={busy}
+          aria-label="Thumbs down"
+          className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors disabled:opacity-50 ${
+            vote === -1
+              ? "border-rose-300 bg-rose-50 text-rose-700"
+              : "border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          }`}
+        >
+          <ThumbsDown className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      {noteOpen && vote === -1 && (
+        <div className="flex items-center gap-1.5">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void saveNote();
+            }}
+            placeholder="What's off? (e.g. already in 400 Targets)"
+            maxLength={500}
+            className="w-72 max-w-full text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-rose-300"
+          />
+          <button
+            type="button"
+            onClick={saveNote}
+            disabled={busy}
+            className="text-rose-700 hover:underline disabled:opacity-50"
+          >
+            save
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Lets a user deprioritize a brand (with a reason) so it drops off the weekly
  *  to-do, keeping a historical record. Understated — a quiet link, not a CTA —

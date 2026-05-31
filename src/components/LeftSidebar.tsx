@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { LayoutDashboard, Search, Sparkles, FileText, Tag, Upload, CheckSquare, BadgeCheck } from "lucide-react";
+import { LayoutDashboard, Search, Sparkles, FileText, Tag, Upload, CheckSquare, BadgeCheck, MessageSquare } from "lucide-react";
 
 interface NavItem {
   path: string;
@@ -16,6 +16,7 @@ const NAV: NavItem[] = [
   { path: "/nielsen", label: "Data", icon: <Upload className="w-4 h-4" /> },
   { path: "/reconcile", label: "Reconcile", icon: <CheckSquare className="w-4 h-4" /> },
   { path: "/review", label: "Review", icon: <BadgeCheck className="w-4 h-4" /> },
+  { path: "/feedback", label: "Feedback", icon: <MessageSquare className="w-4 h-4" /> },
   { path: "/reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
   { path: "/categories", label: "Categories", icon: <Tag className="w-4 h-4" /> },
 ];
