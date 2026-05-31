@@ -51,6 +51,15 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 export interface BrandCardOptions {
   brandName: string;
   forceRefresh?: boolean;
+  /**
+   * No-fetch recompute. Re-derive the computed fields (commerce, momentum,
+   * recommendation, brand-type) from already-cached snapshots WITHOUT calling
+   * any external fetcher — zero SociaVault/search/LLM credits. Cached social
+   * blocks and the existing narrative are preserved untouched. Use this to
+   * propagate derivation-logic changes across all brands cheaply. Takes
+   * precedence over forceRefresh when both are set.
+   */
+  recompute?: boolean;
   override?: {
     tiktokHandle?: string;
     instagramHandle?: string;
@@ -80,13 +89,19 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
   // below ensures a partial-failure live fetch can't clobber a good card.
   const sociaVaultLive = getFeatureFlags().sociaVaultEnabled && opts.forceRefresh === true;
   const tracked = await findTrackedBrand(opts.brandName);
-  if (tracked) {
-    if (!sociaVaultLive) {
-      const seeded = await readCacheRaw(tracked.id);
-      if (seeded) return seeded;
-    }
-  } else {
-    return notTrackedCard(opts.brandName);
+  if (!tracked) return notTrackedCard(opts.brandName);
+
+  // --- Recompute (no-fetch) path ---
+  // Re-derive computed fields from cached snapshots without touching any
+  // external fetcher. MUST run before Step 1, because handle resolution does a
+  // live TikTok search that costs credits. Takes precedence over forceRefresh.
+  if (opts.recompute) {
+    return recomputeBrandCard(tracked.id, opts.brandName);
+  }
+
+  if (!sociaVaultLive) {
+    const seeded = await readCacheRaw(tracked.id);
+    if (seeded) return seeded;
   }
 
   // --- Step 1: handle resolution ---
@@ -350,6 +365,53 @@ export async function getBrandCard(opts: BrandCardOptions): Promise<BrandCard> {
  * Populating this here ensures the Commerce Hero survives a live poll — the
  * live path through assembleBrandCard has no other way to get these numbers.
  */
+/**
+ * No-fetch recompute: re-derive the computed fields (commerce, momentum,
+ * recommendation, brand-type) from cached snapshots and merge them over the
+ * existing cached card. Spends ZERO external credits — no SociaVault, no
+ * handle-resolver search, no Amazon/Reddit/Trends fetch, no narrative LLM call.
+ * Cached social blocks and the existing narrative are preserved exactly.
+ *
+ * Mirrors the field set the "live social failed" merge-guard branch applies,
+ * but as an explicit, self-contained path that can't perturb the live-poll
+ * flow. Returns a clean not-tracked card if there is no cached card to
+ * recompute from (recompute never falls back to a credit-spending live fetch).
+ */
+async function recomputeBrandCard(brandId: string, brandName: string): Promise<BrandCard> {
+  const existing = await readCacheRaw(brandId);
+  if (!existing) {
+    console.log(`[brand-card] recompute ${brandName}: no cached card; skipped (no fetch)`);
+    return notTrackedCard(brandName);
+  }
+
+  const hasResolvedHandle = !!(existing.resolved?.tiktokHandle || existing.resolved?.instagramHandle);
+
+  // All three reads are snapshot/DB-bound — no external fetchers. Momentum does
+  // NOT persist a snapshot here (nothing new was fetched this run).
+  const momentum = await computeMomentumScore({ brandId, persistSnapshot: false });
+  const brandType = await classifyAndPersistBrandType(brandId, hasResolvedHandle);
+  const commerceBlock = await readCommerceBlock(brandId);
+
+  const merged: BrandCard = {
+    ...existing,
+    commerce: commerceBlock ?? existing.commerce,
+    momentumScore: {
+      score: momentum.score,
+      breakdown: momentum.components as unknown as Record<string, number>,
+      asOf: nowIso(),
+    },
+    recommendedAction: deriveRecommendation(momentum.score, brandType, momentum.notInRetail),
+    brandType,
+    generatedAt: nowIso(),
+  };
+
+  await writeCache(brandId, merged);
+  console.log(
+    `[brand-card] recompute ${brandName}: type=${brandType} score=${momentum.score} rec=${merged.recommendedAction} (no fetch)`
+  );
+  return merged;
+}
+
 async function readCommerceBlock(brandId: string): Promise<BrandCard["commerce"] | undefined> {
   const db = getAdminSupabase();
   const snap = async (platform: string, metric: string): Promise<number | null> => {
@@ -755,6 +817,29 @@ function isSociaVaultInstagram(r: InstagramResult | SociaVaultInstagramResult | 
   return !!r && (r as SociaVaultInstagramResult).source === "sociavault";
 }
 
+/** The card's recommendedAction union, shared by the assemble + recompute paths. */
+export type RecommendedAction = "call_now" | "watch" | "skip" | null;
+
+/**
+ * Single source of truth mapping momentum score + brand-type + retail status to
+ * a recommended action. Shared by the live assemble path and the no-fetch
+ * recompute path so the two can never drift.
+ *   - amazon_supplier (FBA/arbitrage, no placeable identity): never "call_now";
+ *     caps at "watch" so velocity stays visible without polluting the queue.
+ *   - otherwise: call_now at >=70 AND not yet in retail; watch at >=50; else skip.
+ */
+export function deriveRecommendation(
+  score: number | null,
+  brandType: BrandType | null,
+  notInRetail: boolean,
+): RecommendedAction {
+  if (score == null) return null;
+  if (brandType === "amazon_supplier") return score >= 50 ? "watch" : "skip";
+  if (score >= 70 && notInRetail) return "call_now";
+  if (score >= 50) return "watch";
+  return "skip";
+}
+
 function assembleBrandCard(a: AssembleInput): BrandCard {
   const partial = Object.keys(a.errors).length > 0;
   // amazon_supplier brands are FBA/arbitrage products with no brand identity to
@@ -762,16 +847,11 @@ function assembleBrandCard(a: AssembleInput): BrandCard {
   // prospect, so they never get "call_now". They cap at "watch" so they remain
   // visible (the velocity may still be worth noting) without polluting the
   // call-now queue.
-  const recommendedAction =
-    a.momentum.score == null
-      ? null
-      : a.brandType === "amazon_supplier"
-        ? (a.momentum.score >= 50 ? "watch" : "skip")
-        : a.momentum.score >= 70 && a.momentum.notInRetail
-          ? "call_now"
-          : a.momentum.score >= 50
-            ? "watch"
-            : "skip";
+  const recommendedAction = deriveRecommendation(
+    a.momentum.score,
+    a.brandType,
+    a.momentum.notInRetail,
+  );
 
   // Provenance tagging — if the data came from SociaVault, the BrandCard's
   // PlatformBlock gets `provenance: "sourced"` + sourceLabel so the UI

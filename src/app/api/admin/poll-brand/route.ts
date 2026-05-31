@@ -76,6 +76,12 @@ export async function GET(request: Request) {
   // rebuild. Use after a code fix so a partial poll can't leave a stale
   // sample/error block lingering in the merged card.
   const clearCache = url.searchParams.get("clear") === "1";
+  // ?recompute=1 re-derives the computed fields (commerce, momentum,
+  // recommendation, brand-type) from cached snapshots WITHOUT any external
+  // fetch — zero SociaVault/search/LLM credits. Use it to propagate a
+  // derivation-logic change across all brands cheaply. Incompatible with
+  // ?clear (recompute needs the cached card), so clear is ignored when set.
+  const recompute = url.searchParams.get("recompute") === "1";
 
   // ---- Config / env-var diagnostic mode ----
   // Returns what the runtime actually sees — without exposing key values.
@@ -139,7 +145,7 @@ export async function GET(request: Request) {
       // When clearing, snapshot the existing card first so a failed rebuild
       // can be rolled back rather than leaving the brand with no card at all.
       let backupCard: unknown = null;
-      if (clearCache) {
+      if (clearCache && !recompute) {
         const { data: existing } = await db
           .from("brand_card_cache")
           .select("payload")
@@ -148,7 +154,9 @@ export async function GET(request: Request) {
         backupCard = existing?.payload ?? null;
         await db.from("brand_card_cache").delete().eq("brand_id", b.id);
       }
-      const card = await getBrandCard({ brandName: b.name, forceRefresh: true });
+      const card = recompute
+        ? await getBrandCard({ brandName: b.name, recompute: true })
+        : await getBrandCard({ brandName: b.name, forceRefresh: true });
       // Rollback guard: if the rebuild produced a notTracked/empty card but we
       // had a real one before, restore the backup so clear=1 can never destroy data.
       if (clearCache && backupCard && (card as { notTracked?: boolean }).notTracked) {
